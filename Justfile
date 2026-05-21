@@ -35,6 +35,7 @@ CHECKPOINTS_DIR     := "out/model/" + MODEL_NAME + "/checkpoints"
 MODEL_REPORT_DIR    := "out/reports/model/" + MODEL_NAME
 RESULTS_DIR         := "out/reports/model/" + MODEL_NAME + "/eval"
 DEVICE              := env_var_or_default("DEVICE", "")
+RUN_ID              := env_var_or_default("RUN_ID", "")
 
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗
@@ -177,13 +178,13 @@ train model=MODEL_NAME:
         --lr 3e-4 \
         --batch-size 32 \
         $([ -n "{{DEVICE}}" ] && echo "--device {{DEVICE}}") \
+        $([ -n "{{RUN_ID}}" ] && echo "--run-id {{RUN_ID}}") \
         --verbose
 
 
 [group("Model Pipeline")]
 [doc("Evaluate a model on test set (default: MODEL_NAME). Override: just eval baseline")]
 eval model=MODEL_NAME:
-    uv run python -c "import pathlib; pathlib.Path('out/reports/model/{{model}}/eval').mkdir(parents=True, exist_ok=True)"
     uv run python -m src.pipeline.model.evaluate \
         --model {{model}} \
         --model-name {{model}} \
@@ -191,7 +192,8 @@ eval model=MODEL_NAME:
         --jsonl {{TRAINING_JSONL}} \
         --splits-dir {{SPLITS_DIR}} \
         --output out/reports/model/{{model}}/eval \
-        $([ -n "{{DEVICE}}" ] && echo "--device {{DEVICE}}")
+        $([ -n "{{DEVICE}}" ] && echo "--device {{DEVICE}}") \
+        $([ -n "{{RUN_ID}}" ] && echo "--run-id {{RUN_ID}}")
 
 
 [group("Model Pipeline")]
@@ -210,10 +212,4 @@ compare model1 model2:
 [group("Demo")]
 [doc("Launch the Streamlit app (requires trained checkpoints)")]
 app:
-    uv run streamlit run app_update/app.py
-
-[group("Demo")]
-[doc("Launch the legacy Streamlit app")]
-app-legacy:
-    uv run streamlit run app/app.py --server.port 8080
-
+    uv run streamlit run app/app.py

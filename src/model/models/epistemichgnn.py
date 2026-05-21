@@ -2,7 +2,7 @@
 
 Architecture:
   EpistemicEncoder  (shared HeteroConv, config-driven)
-      ↓ evidence embeddings [N_ev, hidden_dim]
+      ↓ cat([ev_emb, claim_emb]) [N_ev, 2*hidden_dim]  — claim-aware context
   StanceHead   H1  → stance logits  [N_ev, 3]
   ISHead       H2  → IS scalars     [N_ev, 1]
       ↓ differentiable soft EC aggregation (per claim)
@@ -51,8 +51,8 @@ class EpistemicHGNN(nn.Module):
         super().__init__()
         cfg = graph_config or GraphConfig.v1()
         self.encoder = EpistemicEncoder(cfg, hidden_dim, heads, dropout)
-        self.stance_head = StanceHead(hidden_dim)
-        self.is_head = ISHead(hidden_dim)
+        self.stance_head = StanceHead(hidden_dim * 2)
+        self.is_head = ISHead(hidden_dim * 2)
         self.verdict_head = VerdictHead()
         self.aggregator = SymbolicAggregator()
         self.ec_threshold = ec_threshold
@@ -61,7 +61,7 @@ class EpistemicHGNN(nn.Module):
         from src.model.architecture.arc_block import ArcBlock, CompositeArcBlock
         return CompositeArcBlock(
             blocks=[
-                ArcBlock("Input Features", "Claim 390d · Evidence 400d", node_id="input_features", color="#dbeafe"),
+                ArcBlock("Input Features", "Claim 390d · Evidence 405d", node_id="input_features", color="#dbeafe"),
                 self.encoder.arc_block_definition(inference_out),
                 self.stance_head.arc_block_definition(inference_out),
                 self.is_head.arc_block_definition(inference_out),
@@ -94,10 +94,16 @@ class EpistemicHGNN(nn.Module):
             verdict_logits : [N_claims, 3]  — from soft symbolic scores
         """
         x_dict = self.encoder(data)
-        ev_emb = x_dict[NodeType.EVIDENCE]
+        ev_emb    = x_dict[NodeType.EVIDENCE]  # [N_ev, hidden_dim]
+        claim_emb = x_dict[NodeType.CLAIM]     # [N_claims, hidden_dim]
 
-        stance_logits = self.stance_head(ev_emb)  # [N_ev, 3]
-        is_pred = self.is_head(ev_emb)  # [N_ev, 1]
+        batch_ptr = getattr(data[NodeType.EVIDENCE], "batch", None)
+        if batch_ptr is None:
+            batch_ptr = torch.zeros(ev_emb.shape[0], dtype=torch.long, device=ev_emb.device)
+        ev_ctx = torch.cat([ev_emb, claim_emb[batch_ptr]], dim=-1)  # [N_ev, 2*hidden_dim]
+
+        stance_logits = self.stance_head(ev_ctx)  # [N_ev, 3]
+        is_pred       = self.is_head(ev_ctx)       # [N_ev, 1]
 
         # Soft symbolic scores — differentiable (uses softmax probs, not argmax)
         ec_scores, verdict_logits = self._soft_verdict_logits(data, stance_logits, is_pred.detach())
@@ -126,13 +132,13 @@ class EpistemicHGNN(nn.Module):
         ref = float(ec[1])
 
         if sup > _EC_DECISIVE and ref > _EC_DECISIVE:
-            # Both sides strong — conflicting evidence, VerdictHead decides.
+            # Both sides decisive — VerdictHead resolves the conflict.
             verdict_idx = out["verdict_logits"].argmax(dim=-1).item()
             verdict = _INT_TO_VERDICT.get(int(verdict_idx), "not_enough_evidence")
-        elif ref > sup and ref > _EC_DECISIVE:
-            verdict = "refuted"
-        elif sup > ref and sup > _EC_DECISIVE:
+        elif sup > _EC_DECISIVE:
             verdict = "supported"
+        elif ref > _EC_DECISIVE:
+            verdict = "refuted"
         else:
             # EC weak on both sides — VerdictHead decides.
             verdict_idx = out["verdict_logits"].argmax(dim=-1).item()
@@ -181,7 +187,8 @@ class EpistemicHGNN(nn.Module):
                 "modality":          ev.get("modality", "web_text"),
                 "source_type":       ev.get("source_type", "unknown"),
                 "stance":            _int_to_stance.get(s_idx, "not_enough_evidence"),
-                "stance_confidence": round(float(stance_probs[i, s_idx].item()), 3),
+                "support_confidence": round(float(stance_probs[i, 0].item()), 3),
+                "refute_confidence":  round(float(stance_probs[i, 1].item()), 3),
                 "is_score":          round(is_vals[i], 3),
                 "source_trust":      round(st_vals[i], 3),
                 "evidence_weight":   round(ew_vals[i], 3),

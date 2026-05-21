@@ -63,18 +63,18 @@ def combine_evidence_weights(
 
 
 
-def compute_evidence_confidence(st: float, ew: float, is_: float) -> float:
+def compute_evidence_confidence(st: float, ew: float, inference_strength: float) -> float:
     """EC_i = 1 - (1 - ST_i)^(EW_i * IS_i).
 
     Args:
-        st:  Source trustworthiness ST_i from registry (0–1).
-        ew:  Epistemic-type weight EW_i = combine_evidence_weights(evidence_types) (0–1).
-        is_: Inference strength IS_i from rubric (0–1).
+        st:                 Source trustworthiness ST_i from registry (0–1).
+        ew:                 Epistemic-type weight EW_i = combine_evidence_weights(evidence_types) (0–1).
+        inference_strength: IS_i from rubric (0–1).
 
     Returns:
         EC_i in [0, 1] rounded to 4 decimal places.
     """
-    exponent = ew * is_
+    exponent = ew * inference_strength
     if exponent == 0.0:
         return 0.0
     return round(1.0 - (1.0 - st) ** exponent, 4)
@@ -114,8 +114,8 @@ def aggregate_scores(
         source_id = ev.get("source_id", "unknown_web")
         st = get_source_trust(source_id, reg)
         ew = combine_evidence_weights(ev.get("evidence_types", []))
-        is_ = ev.get("inference_strength", 0.6)
-        ec = compute_evidence_confidence(st, ew, is_)
+        inference_strength = ev.get("inference_strength", 0.6)
+        ec = compute_evidence_confidence(st, ew, inference_strength)
 
         if stance == EvidenceStance.SUPPORTS:
             support_complements.append(1.0 - ec)

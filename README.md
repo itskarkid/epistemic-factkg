@@ -223,6 +223,22 @@ just clean                      # Delete all generated outputs (out/)
 | [ADR-012](docs/adr/012-shortcut-leakage-and-synthetic-data-strategy.md) | Shortcut leakage and synthetic data strategy |
 | [ADR-013](docs/adr/013-synthetic-pipeline.md) | Synthetic data pipeline |
 | [ADR-014](docs/adr/014-verdict-head-learned-thresholds.md) | Learned verdict thresholds (VerdictHead) |
+| [ADR-015](docs/adr/015-class-weighted-loss.md) | Class-weighted loss for imbalanced verdicts |
+| [ADR-016](docs/adr/016-baseline-hgnn-ablation.md) | Baseline HGNN ablation design |
+| [ADR-017](docs/adr/017-is-jitter-synthetic.md) | IS jitter on synthetic data |
+| [ADR-018](docs/adr/018-nei-heavy-synthetic-distribution.md) | NEI-heavy synthetic distribution |
+| [ADR-019](docs/adr/019-averitec-is-rubric.md) | AVeriTeC IS rubric |
+| [ADR-020](docs/adr/020-webarchive-source-trust-resolution.md) | Web Archive source trust resolution |
+| [ADR-021](docs/adr/021-is-cap-by-source-trust.md) | IS capped by source trust |
+| [ADR-022](docs/adr/022-is-gradient-detach.md) | IS gradient detach for clean regression |
+| [ADR-023](docs/adr/023-hybrid-hgnn-v2.md) | HybridHGNN v2 — HybridVerdictHead |
+| [ADR-024](docs/adr/024-nli-evidence-augmentation.md) | NLI probs as evidence features (Part 1 retained; Part 2 superseded by ADR-029) |
+| [ADR-025](docs/adr/025-averitec-qa-nli-preprocessing.md) | AVeriTeC Q+A NLI pre-processing |
+| [ADR-026](docs/adr/026-encoder-residuals-windowed-coevidence.md) | Encoder residuals + windowed co-evidence |
+| [ADR-027](docs/adr/027-predict-full-verdicthead-delegation.md) | Full VerdictHead delegation (removed EC_NEI_MAX) |
+| [ADR-028](docs/adr/028-generator-direct-v3-output.md) | Generator direct v3.0 output — schema corrections |
+| [ADR-029](docs/adr/029-nli-claim-aware-stance-head.md) | v3-nli claim-aware H1 StanceHead on GNN output (supersedes ADR-024 Part 2) |
+| [ADR-030](docs/adr/030-ec-decision-path-analysis.md) | EC decision path analysis: symbolic vs VerdictHead vote distribution and vh_conflict failure diagnosis |
 
 ## Testing
 

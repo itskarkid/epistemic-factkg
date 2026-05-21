@@ -147,7 +147,7 @@ class ClaimGraphBuilder:
         ev_features, stance_y, is_y, ew_vals, st_vals = self._build_evidence(
             evidence_items, nli_probs=nli_probs
         )
-        data[NodeType.EVIDENCE].x = ev_features  # [N_ev, 400] or [N_ev, 403]
+        data[NodeType.EVIDENCE].x = ev_features  # [N_ev, 405] or [N_ev, 408]
         data[NodeType.EVIDENCE].stance_y = stance_y  # [N_ev]
         data[NodeType.EVIDENCE].is_y = is_y  # [N_ev]
         data[NodeType.EVIDENCE].ew = ew_vals  # [N_ev]
@@ -257,10 +257,10 @@ class ClaimGraphBuilder:
                 torch.stack(src_vecs),
             ],
             dim=1,
-        )  # [N_ev, 400]
+        )  # [N_ev, 405]
 
         if nli_probs is not None and nli_probs.shape[0] == ev_features.shape[0]:
-            ev_features = torch.cat([ev_features, nli_probs], dim=1)  # [N_ev, 403]
+            ev_features = torch.cat([ev_features, nli_probs], dim=1)  # [N_ev, 408]
 
         return (
             ev_features,

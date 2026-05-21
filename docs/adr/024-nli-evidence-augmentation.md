@@ -1,8 +1,12 @@
 # ADR-024: NLIHybridHGNN (v3-nli) — NLI Probs as Features + Direct EC Signal
 
-**Status:** Accepted  
+**Status:** Partially superseded — Part 1 (NLI as input features, 408d) retained; Part 2 (H1 bypass) superseded by ADR-029  
 **Date:** 2026-05-17  
 **Builds on:** ADR-023 (HybridHGNN v2-hgnn)
+
+> **Note:** Part 2 of this ADR (NLI probs bypass H1 in the EC formula) is no longer
+> the implementation. H1 StanceHead now runs on claim-aware GNN output
+> `cat([ev_emb, claim_emb])`, making the NLI bypass unnecessary. See ADR-029.
 
 ---
 

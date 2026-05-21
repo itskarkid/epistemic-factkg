@@ -77,7 +77,15 @@ class Trainer:
                 is_y = batch[NodeType.EVIDENCE].is_y.view(-1, 1)  # [N_ev, 1]
                 verdict_y = batch[NodeType.CLAIM].y.view(-1)  # [N_claims]
 
-                s_loss = self.stance_criterion(out["stance_logits"], stance_y)
+                # Stance loss is optional — v3-nli has no StanceHead
+                if "stance_logits" in out:
+                    s_loss = self.stance_criterion(out["stance_logits"], stance_y)
+                    correct_stance += (
+                        (out["stance_logits"].argmax(-1) == stance_y).sum().item()
+                    )
+                else:
+                    s_loss = torch.tensor(0.0, device=self.device)
+
                 i_loss = self.is_criterion(out["is_pred"], is_y)
                 v_loss = self.verdict_criterion(out["verdict_logits"], verdict_y)
                 loss = (
@@ -97,9 +105,6 @@ class Trainer:
                 total_stance += s_loss.item() * nev
                 total_is += i_loss.item() * nev
                 total_verdict += v_loss.item() * nc
-                correct_stance += (
-                    (out["stance_logits"].argmax(-1) == stance_y).sum().item()
-                )
                 correct_verdict += (
                     (out["verdict_logits"].argmax(-1) == verdict_y).sum().item()
                 )

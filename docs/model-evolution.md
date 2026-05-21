@@ -7,7 +7,7 @@ one to the next, and their comparative results on the test set.
 
 ## Architecture Overview
 
-All three models share the same upstream components: the HeteroConv graph encoder,
+All four models share the same upstream components: the HeteroConv graph encoder,
 StanceHead (H1), and ISHead (H2). They differ only in how the verdict is produced.
 
 ```
@@ -15,7 +15,7 @@ StanceHead (H1), and ISHead (H2). They differ only in how the verdict is produce
 │                       SHARED COMPONENTS                              │
 │                                                                       │
 │  HeteroData graph                                                     │
-│  (claim, evidence, triple nodes + pramana-typed edges)               │
+│  (claim + evidence nodes + pramana-typed edges)                      │
 │         │                                                             │
 │         ▼                                                             │
 │  ┌─────────────────┐                                                  │
@@ -26,15 +26,18 @@ StanceHead (H1), and ISHead (H2). They differ only in how the verdict is produce
 │    ▼             ▼                                                    │
 │  ev_emb      claim_emb                                                │
 │  [N_ev,256]  [N_cl,256]                                               │
-│    │                                                                  │
-│    ├──────────────────────────┐                                       │
-│    ▼                          ▼                                       │
-│  ┌──────────┐          ┌───────────┐                                  │
-│  │StanceHead│          │  ISHead   │                                  │
-│  │  (H1)    │          │   (H2)    │                                  │
-│  └──────────┘          └───────────┘                                  │
-│  stance_logits         is_pred                                        │
-│  [N_ev, 3]             [N_ev, 1]  ← supervised by IS regression      │
+│    │             │                                                    │
+│    └──────┬──────┘  cat([ev_emb, claim_emb[batch_ptr]])              │
+│           ▼                                                           │
+│    ev_ctx [N_ev, 512]  ← claim-aware evidence context                │
+│    ┌──────┴──────┐                                                    │
+│    ▼             ▼                                                    │
+│  ┌──────────┐ ┌───────────┐                                           │
+│  │StanceHead│ │  ISHead   │                                           │
+│  │  (H1)    │ │   (H2)    │                                           │
+│  └──────────┘ └───────────┘                                           │
+│  stance_logits  is_pred                                               │
+│  [N_ev, 3]      [N_ev, 1]  ← supervised by IS regression             │
 └─────────────────────────────────────────────────────────────────────┘
          │                    │
          └────────┬───────────┘
@@ -159,10 +162,9 @@ baseline's 256-dim embedding.
 
 ## Model 4 — NLIHybridHGNN (`v3-nli`)  ← primary model
 
-**ADR:** ADR-024  
-**Purpose:** Feed frozen NLI stance probs directly into the EC formula, bypassing H1's
-training-distribution limitation. NLI probs are also stored as evidence node features
-for the GNN encoder.
+**ADR:** ADR-024 (Part 1), ADR-029  
+**Purpose:** Append frozen NLI cross-encoder probs as evidence node features (408d total).
+H1 StanceHead runs on claim-aware GNN output — graph-enriched NLI features + claim context.
 
 ```
   evidence text + claim text
@@ -171,18 +173,29 @@ for the GNN encoder.
   frozen DeBERTa-v3-small (MNLI)   ← cross-encoder, per (claim, ev) pair
   [p_contradiction, p_entailment, p_neutral]
        │
-       ├─→ appended to ev_features: 400d → 403d  (GNN encoder input)
-       │
-       └─→ reordered [1,0,2] → [p_supports, p_refutes, p_neutral]
+       └─→ appended to ev_features: 405d → 408d  (GNN encoder input, GraphConfig.v2)
                 │
                 ▼
-       SymbolicAggregator  ←  bypasses H1 entirely for EC formula
+       EpistemicEncoder (HeteroConv, 408d→256d)
+       ev_emb [N_ev, 256]    claim_emb [N_cl, 256]
+                │
+                ▼
+       cat([ev_emb, claim_emb[batch_ptr]])  [N_ev, 512d]  ← claim-aware context
+                │
+          ┌─────┴────┐
+          ▼          ▼
+       H1 StanceHead   H2 ISHead
+       stance_logits   is_pred.detach()
+       [N_ev, 3]       [N_ev, 1]
+                │
+                ▼
+       SymbolicAggregator  (same EC path as v2-hgnn)
        EC_i = 1 - (1 - ST_i)^(EW_i × IS_i)
-       support_score = 1 - ∏(1 - EC_i × p_supports_i)
-       refute_score  = 1 - ∏(1 - EC_i × p_refutes_i)
+       support_score = 1 - ∏(1 - EC_i × p_support_i)
+       refute_score  = 1 - ∏(1 - EC_i × p_refute_i)
                 │
                 ▼
-       scores [N_cl, 2] + claim_emb [N_cl, 256]
+       scores [N_cl, 3] + claim_emb [N_cl, 256]
                 │
        ┌────────▼────────┐
        │ HybridVerdictHead│
@@ -192,16 +205,21 @@ for the GNN encoder.
 ```
 
 **What changes vs v2-hgnn:**
-1. Evidence node input: 400d → 403d (NLI probs appended)
-2. EC formula: uses frozen NLI probs directly instead of H1's learned stance probs
-3. `_soft_verdict_logits` overridden in `NLIHybridHGNN`; H1 only trains on stance CE
+1. Evidence node input: 405d → 408d (NLI probs appended, ADR-024 Part 1)
+2. EC formula: same path as v2-hgnn — H1 on claim-aware GNN output (ADR-029)
+3. H1 receives `cat([ev_emb, claim_emb])` [512d] — NLI features visible after GNN + claim context
+
+**Note (ADR-029):** An earlier design (ADR-024 Part 2) bypassed H1 and fed NLI probs directly
+to SymbolicAggregator. This was replaced when claim-aware ev_ctx was introduced — H1 running on
+GNN-enriched NLI features + claim context is sufficient, and the bypass created an inconsistent
+EC formula path vs the other three models.
 
 **Gradient paths:**
 ```
 verdict_CE → HybridVerdictHead → claim_emb → encoder  ✓  (rich 256d path)
-verdict_CE → HybridVerdictHead → EC scores → NLI probs    (frozen, no grad)
+verdict_CE → HybridVerdictHead → EC×p_stance → stance_logits → encoder  ✓
 IS_MSE     → ISHead            → encoder   ✓  (clean, detached)
-stance_CE  → StanceHead        → encoder   ✓  (H1 still supervised, not in EC)
+stance_CE  → StanceHead        → encoder   ✓
 ```
 
 ---
@@ -261,8 +279,8 @@ ADR-013  EpistemicHGNN v1 architecture
     │            (EC scores + claim_emb → verdict)
     │
     ├── ADR-024  NLIHybridHGNN v3-nli  ← primary model
-    │            (NLI probs [3d] appended to evidence features: 400d → 403d)
-    │            (NLI probs bypass H1 in EC formula)
+    │            (NLI probs [3d] appended to evidence features: 405d → 408d)
+    │            (Part 2 — H1 bypass — superseded by ADR-029)
     │
     ├── ADR-025  AVeriTeC Q+A evidence pre-processing for NLI
     │            (strip Q+A prefix before NLI scoring; answer-only premise)
@@ -272,8 +290,11 @@ ADR-013  EpistemicHGNN v1 architecture
     │            (skip connections at each GATConv layer; max-5 neighbours by index)
     │            (prevents NLI feature dilution; reduces oversmoothing on dense graphs)
     │
-    └── ADR-027  Remove _EC_NEI_MAX — full VerdictHead delegation
-                 (eliminates train-inference gap for ambiguous EC cases)
+    ├── ADR-027  Remove _EC_NEI_MAX — full VerdictHead delegation
+    │            (eliminates train-inference gap for ambiguous EC cases)
+    │
+    └── ADR-029  Claim-aware H1 StanceHead on GNN output (supersedes ADR-024 Part 2)
+                 (cat([ev_emb, claim_emb]) → H1; consistent EC path across all 4 models)
 ```
 
 ---

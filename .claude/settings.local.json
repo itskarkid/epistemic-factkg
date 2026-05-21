@@ -5,7 +5,8 @@
       "Read(//Users/Frido/Desktop/**)",
       "Bash(python3 -)",
       "Bash(python3)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -m pylint --disable=all --enable=unused-import /Users/Frido/Workspace/Projects/github/epistemic-factkg/src/model/models/*.py)"
     ]
   }
 }

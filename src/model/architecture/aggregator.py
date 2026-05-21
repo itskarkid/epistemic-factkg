@@ -4,7 +4,7 @@ EC_i  = 1 - (1 - ST_i)^(EW_i * IS_i)
 SupportScore = 1 - prod(1 - EC_i)  over supporters
 RefuteScore  = 1 - prod(1 - EC_i)  over refuters
 
-Called only at inference — gradients never flow through here.
+Called during both training (soft scores via compute_soft_scores) and inference.
 """
 
 from __future__ import annotations
@@ -96,18 +96,9 @@ class SymbolicAggregator:
             live_annotations=ann,
         )
 
-    def get_verdict(self, support_score: float, refute_score: float) -> str:
-        if support_score >= 0.75 and refute_score < 0.40:
-            return "supported"
-        if refute_score >= 0.75 and support_score < 0.40:
-            return "refuted"
-        if support_score >= 0.40 and refute_score >= 0.40:
-            return "conflicting_evidence"
-        return "not_enough_evidence"
-
 
 def _aggregate(ec: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     selected = ec[mask]
     if selected.numel() == 0:
-        return torch.tensor(0.0)
+        return ec.new_tensor(0.0)
     return 1.0 - torch.prod(1.0 - selected)

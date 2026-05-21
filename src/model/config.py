@@ -1,7 +1,7 @@
 """GraphConfig — single source of truth for node dims and edge types.
 
 V1 graph schema:
-  Nodes : claim (390-d), evidence (400-d), triple (384-d, AI2THOR only)
+  Nodes : claim (390-d), evidence (405-d), triple (384-d, AI2THOR only)
   Edges : has_evidence, connected_to, co_evidence, has_triple, from_triple
 
 To extend to V2 (e.g. add source nodes):
@@ -35,7 +35,7 @@ class GraphConfig:
 
     @classmethod
     def v2(cls) -> GraphConfig:
-        """V2: evidence nodes include 3 NLI stance prob features (403d total)."""
+        """V2: evidence nodes include 3 NLI prob features (408d total = 405d base + 3d NLI)."""
         return cls(
             node_dims={
                 NodeType.CLAIM: CLAIM_DIM,
@@ -56,7 +56,7 @@ class GraphConfig:
         return cls(
             node_dims={
                 NodeType.CLAIM: CLAIM_DIM,  # 390
-                NodeType.EVIDENCE: EVIDENCE_DIM,  # 400
+                NodeType.EVIDENCE: EVIDENCE_DIM,  # 405
                 NodeType.TRIPLE: TRIPLE_DIM,  # 384
             },
             edge_types=[

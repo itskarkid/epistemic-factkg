@@ -7,6 +7,7 @@ import argparse
 import json
 import pickle
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import torch
@@ -65,6 +66,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("--device", default=None, help="cuda or cpu (default: auto-detect)")
     ap.add_argument("--verbose", "-v", action="store_true")
+    ap.add_argument("--run-id", default=None, help="Run ID for versioned output (default: ISO timestamp)")
     return ap
 
 
@@ -102,6 +104,17 @@ def _build_graphs(
     if verbose:
         print(f"  {split_name}: {len(graphs)} graphs  ({len(skipped_ids)} skipped)")
     return graphs, skipped_ids
+
+
+def _write_latest_pointer(base_dir: Path, run_id: str) -> None:
+    """Point 'latest' at run_id. Uses a symlink; falls back to latest.txt on Windows."""
+    latest = base_dir / "latest"
+    try:
+        if latest.is_symlink() or latest.exists():
+            latest.unlink()
+        latest.symlink_to(run_id)
+    except OSError:
+        (base_dir / "latest.txt").write_text(run_id, encoding="utf-8")
 
 
 def main() -> None:
@@ -261,9 +274,12 @@ def main() -> None:
 
     # ── Save history ──────────────────────────────────────────────────────────
     ckpt_dir = Path(args.checkpoint_dir)
-    report_dir = Path(args.report_dir)
+    run_id = args.run_id or datetime.now().strftime("%Y%m%dT%H%M%S")
+    base_report_dir = Path(args.report_dir)
+    report_dir = base_report_dir / run_id
     report_dir.mkdir(parents=True, exist_ok=True)
     report = {
+        "run_id": run_id,
         "data_coverage": {
             "train_total": len(train_indices),
             "train_graphs": len(train_graphs),
@@ -277,7 +293,9 @@ def main() -> None:
         "history": history,
     }
     (report_dir / "training_history.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    _write_latest_pointer(base_report_dir, run_id)
     print(f"Best model (val_acc) -> {ckpt_dir}/best_model.pt")
+    print(f"Training report      -> {report_dir}/ (run_id={run_id})")
 
 
 if __name__ == "__main__":

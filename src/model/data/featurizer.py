@@ -142,7 +142,7 @@ class Featurizer:
     def encode_nli_stance(self, claim: str, ev_texts: list[str]) -> torch.Tensor:
         """Cross-encode (claim, evidence) pairs → softmax probs [N_ev, 3].
 
-        Column order: [contradiction, entailment, neutral] (MNLI label order).
+        Column order: [p_contradiction, p_entailment, p_neutral] (MNLI label order).
         For Q+A format evidence (AVeriTeC), only the answer part is scored so
         the NLI model receives a natural premise instead of a Q+A wrapper.
         Returns empty tensor [0, 3] for empty ev_texts.

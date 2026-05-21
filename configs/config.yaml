@@ -8,7 +8,7 @@
 #   synthetic:   LLM generator config (model, n_records, distribution)
 
 # ── App configuration ─────────────────────────────────────────────────────────
-# Read by app_update/config.py; ignored by the data/model pipeline.
+# Read by app/config.py; ignored by the data/model pipeline.
 # Labels are NOT stored here — derive from enum values via enum_label() at render time.
 # Only non-derivable attributes: colors, emojis, CSS classes, model descriptions, paths.
 app:
@@ -47,7 +47,6 @@ app:
     - { key: reports,   icon: "📈" }
     - { key: dataset,   icon: "🗄️" }
     - { key: pipeline,  icon: "⚙️" }
-    - { key: registry,  icon: "📝" }
     - { key: reference, icon: "📚" }
 
 # ── Shared: epistemic weights ─────────────────────────────────────────────────

@@ -49,8 +49,8 @@ class BaselineHGNN(nn.Module):
         super().__init__()
         cfg = graph_config or GraphConfig.v1()
         self.encoder = EpistemicEncoder(cfg, hidden_dim, heads, dropout)
-        self.stance_head = StanceHead(hidden_dim)
-        self.is_head = ISHead(hidden_dim)
+        self.stance_head = StanceHead(hidden_dim * 2)
+        self.is_head = ISHead(hidden_dim * 2)
         # Verdict from claim node only — no EC formula, no symbolic aggregation
         self.verdict_mlp = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim // 2),
@@ -67,12 +67,18 @@ class BaselineHGNN(nn.Module):
             vp = inference_out.get("verdict_probs")
             if vp:
                 ann["probs"] = "[" + ", ".join(f"{p:.2f}" for p in vp) + "]"
+        # H1 and H2 are training-only supervision for evidence nodes.
+        # Verdict path is: claim_emb → VerdictMLP directly.
         return CompositeArcBlock(
             blocks=[
-                ArcBlock("Input Features", "Claim 390d · Evidence 400d", node_id="input_features", color="#dbeafe"),
-                self.encoder.arc_block_definition(inference_out),
-                self.stance_head.arc_block_definition(inference_out),
-                self.is_head.arc_block_definition(inference_out),
+                ArcBlock("Input Features", "Claim 390d · Evidence 405d", node_id="input_features", color="#dbeafe"),
+                ArcBlock(
+                    "EpistemicEncoder + H1/H2",
+                    "HeteroConv × 2 (GAT) → claim_emb, ev_emb\n"
+                    "H1 StanceHead + H2 ISHead train on claim-aware ctx: cat([ev_emb, claim_emb])\n"
+                    "H1/H2 outputs NOT used in verdict path",
+                    node_id="encoder", color="#bfdbfe",
+                ),
                 ArcBlock("Verdict MLP", "claim_emb 256d → Linear(256→128) → ReLU → Linear(128→3) · no EC", node_id="verdict_mlp", color="#fce7f3", live_annotations=ann),
             ],
             title="BaselineHGNN",
@@ -99,12 +105,17 @@ class BaselineHGNN(nn.Module):
             verdict_logits : [N_claims, 3]  — from claim node MLP, no EC
         """
         x_dict = self.encoder(data)
-        ev_emb = x_dict[NodeType.EVIDENCE]  # [N_ev, hidden_dim]
-        claim_emb = x_dict[NodeType.CLAIM]  # [N_claims, hidden_dim]
+        ev_emb    = x_dict[NodeType.EVIDENCE]  # [N_ev, hidden_dim]
+        claim_emb = x_dict[NodeType.CLAIM]     # [N_claims, hidden_dim]
+
+        batch_ptr = getattr(data[NodeType.EVIDENCE], "batch", None)
+        if batch_ptr is None:
+            batch_ptr = torch.zeros(ev_emb.shape[0], dtype=torch.long, device=ev_emb.device)
+        ev_ctx = torch.cat([ev_emb, claim_emb[batch_ptr]], dim=-1)  # [N_ev, 2*hidden_dim]
 
         return {
-            "stance_logits": self.stance_head(ev_emb),
-            "is_pred": self.is_head(ev_emb),
+            "stance_logits": self.stance_head(ev_ctx),
+            "is_pred":       self.is_head(ev_ctx),
             "verdict_logits": self.verdict_mlp(claim_emb),
         }
 
@@ -156,7 +167,8 @@ class BaselineHGNN(nn.Module):
                 "modality":          ev.get("modality", "web_text"),
                 "source_type":       ev.get("source_type", "unknown"),
                 "stance":            _int_to_stance.get(s_idx, "not_enough_evidence"),
-                "stance_confidence": round(float(stance_probs[i, s_idx].item()), 3),
+                "support_confidence": round(float(stance_probs[i, 0].item()), 3),
+                "refute_confidence":  round(float(stance_probs[i, 1].item()), 3),
                 "is_score":          round(is_vals[i], 3),
                 "source_trust":      round(st_vals[i], 3),
                 "evidence_weight":   round(ew_vals[i], 3),

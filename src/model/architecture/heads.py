@@ -1,7 +1,7 @@
 """Stance and Inference-Strength prediction heads.
 
-Both heads are graph-structure-agnostic — they only see evidence embeddings
-from the encoder output. They never know or care what node types exist.
+Both heads are claim-aware: they receive cat([ev_emb, claim_emb]) so that
+stance and inference-strength are predicted relative to the specific claim.
 
 H1 StanceHead  : 3-class classification (supports / refutes / neutral)
 H2 ISHead      : scalar regression in [0, 1] (inference strength)
@@ -19,18 +19,18 @@ if TYPE_CHECKING:
 
 
 class StanceHead(nn.Module):
-    """H1 — per-evidence stance classification.
+    """H1 — per-evidence stance classification, claim-aware.
 
-    Input : evidence embeddings [N_ev, hidden_dim]
+    Input : cat([ev_emb, claim_emb]) [N_ev, 2*hidden_dim]
     Output: logits [N_ev, 3]  (0=supports, 1=refutes, 2=neutral)
     """
 
-    def __init__(self, hidden_dim: int = 256) -> None:
+    def __init__(self, input_dim: int = 512) -> None:
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.Linear(input_dim, input_dim // 2),
             nn.ReLU(),
-            nn.Linear(hidden_dim // 2, 3),
+            nn.Linear(input_dim // 2, 3),
         )
 
     def arc_block_definition(self, inference_out=None) -> "ArcBlock":
@@ -46,14 +46,15 @@ class StanceHead(nn.Module):
                 ann["sup/ref/nei"] = f"{sup}/{ref}/{nei} of {n}"
         return ArcBlock(
             name="Stance Head H1",
-            detail="Linear(hidden→3) · supports / refutes / neutral per evidence",
+            detail="Linear(2×hidden→3) · claim-aware · supports / refutes / neutral",
             node_id="stance_head",
             color="#fef3c7",
             live_annotations=ann,
         )
 
-    def forward(self, ev_emb: torch.Tensor) -> torch.Tensor:
-        return self.mlp(ev_emb)
+    def forward(self, ev_ctx: torch.Tensor) -> torch.Tensor:
+        """ev_ctx: cat([ev_emb, claim_emb]) — [N_ev, 2*hidden_dim]."""
+        return self.mlp(ev_ctx)
 
 
 class VerdictHead(nn.Module):
@@ -136,18 +137,18 @@ class HybridVerdictHead(nn.Module):
 
 
 class ISHead(nn.Module):
-    """H2 — per-evidence inference-strength regression.
+    """H2 — per-evidence inference-strength regression, claim-aware.
 
-    Input : evidence embeddings [N_ev, hidden_dim]
+    Input : cat([ev_emb, claim_emb]) [N_ev, 2*hidden_dim]
     Output: IS scalars [N_ev, 1] in [0, 1] (via Sigmoid)
     """
 
-    def __init__(self, hidden_dim: int = 256) -> None:
+    def __init__(self, input_dim: int = 512) -> None:
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.Linear(input_dim, input_dim // 2),
             nn.ReLU(),
-            nn.Linear(hidden_dim // 2, 1),
+            nn.Linear(input_dim // 2, 1),
             nn.Sigmoid(),
         )
 
@@ -161,11 +162,12 @@ class ISHead(nn.Module):
                 ann["IS mean"] = f"{sum(vals) / len(vals):.3f}"
         return ArcBlock(
             name="IS Head H2",
-            detail="Linear(hidden→1) · inference strength [0, 1] per evidence",
+            detail="Linear(2×hidden→1) · claim-aware · inference strength [0, 1]",
             node_id="is_head",
             color="#fef3c7",
             live_annotations=ann,
         )
 
-    def forward(self, ev_emb: torch.Tensor) -> torch.Tensor:
-        return self.mlp(ev_emb)
+    def forward(self, ev_ctx: torch.Tensor) -> torch.Tensor:
+        """ev_ctx: cat([ev_emb, claim_emb]) — [N_ev, 2*hidden_dim]."""
+        return self.mlp(ev_ctx)
