@@ -34,6 +34,23 @@ class NLIHybridHGNN(HybridHGNN):
         dropout:      Dropout — same as v2-hgnn (0.1).
     """
 
+
+    def arc_block_definition(self, inference_out=None):
+        from src.model.architecture.arc_block import ArcBlock, CompositeArcBlock
+        return CompositeArcBlock(
+            blocks=[
+                ArcBlock("Input Features", "Claim 390d · Evidence 403d (400 + 3 NLI cols)", node_id="input_features", color="#dbeafe"),
+                ArcBlock("NLI Cross-Encoder", "Frozen DeBERTa-v3-small · p_entail/p_contra/p_neutral", node_id="nli_encoder", color="#ede9fe"),
+                self.encoder.arc_block_definition(inference_out),
+                self.stance_head.arc_block_definition(inference_out),
+                self.is_head.arc_block_definition(inference_out),
+                ArcBlock("EC Formula (NLI)", "NLI probs [p_entail→sup, p_contra→ref] → EC", node_id="ec_formula", color="#d1fae5"),
+                self.aggregator.arc_block_definition(inference_out),
+                self.verdict_head.arc_block_definition(inference_out),
+            ],
+            title="NLIHybridHGNN",
+        )
+
     def __init__(
         self,
         graph_config: GraphConfig | None = None,
@@ -129,3 +146,23 @@ class NLIHybridHGNN(HybridHGNN):
             "refute_score": ref,
             "verdict": verdict,
         }
+
+    def build_prediction_payload(
+        self,
+        out: dict,
+        graph_data: HeteroData,
+        resolved_items: list[dict],
+    ) -> dict:
+        """Override: adds nli_probs from ev.x[:, -3:] to each breakdown item."""
+        payload = super().build_prediction_payload(out, graph_data, resolved_items)
+
+        nli_raw = graph_data[NodeType.EVIDENCE].x[:, -3:].tolist()
+        for i, item in enumerate(payload["evidence_breakdown"]):
+            if i < len(nli_raw):
+                raw = nli_raw[i]
+                item["nli_probs"] = {
+                    "contradiction": round(raw[0], 3),
+                    "entailment":    round(raw[1], 3),
+                    "neutral":       round(raw[2], 3),
+                }
+        return payload

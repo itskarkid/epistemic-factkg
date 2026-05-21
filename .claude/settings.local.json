@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -c /Users/Frido/Desktop/eval_results.json /Users/Frido/Workspace/Projects/github/epistemic-factkg/out/eval_results.json)",
+      "Read(//Users/Frido/Desktop/**)",
+      "Bash(python3 -)",
+      "Bash(python3)",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}

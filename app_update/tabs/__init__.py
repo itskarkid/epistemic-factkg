@@ -1,97 +1,46 @@
-"""Tabs registry for the updated app.
+"""Tab registry for app_update.
 
-Each tab is declared as a ``TabDef`` and added to the ``TABS`` list.
-``render_tab()`` dispatches to the correct render function.
-
-To add a new tab:
-1. Create ``tabs/<name>.py`` with a ``render()`` function.
-2. Import it here and add a ``TabDef`` entry to ``TABS``.
+get_tabs(cfg) returns ordered list of TabDef from config.yaml tab_defs.
+Each tab module exposes def render(cfg: AppConfig) -> None.
 """
 
 from __future__ import annotations
 
-import streamlit as st
-from dataclasses import dataclass
-from typing import Callable
+from typing import TYPE_CHECKING
 
-from tabs import dataset as _dataset
+from app_update.core.tab import TabDef
 
+if TYPE_CHECKING:
+    from app_update.config import AppConfig
 
-@dataclass(frozen=True)
-class TabDef:
-    """Metadata + render callback for a single tab."""
-    key: str            # machine-readable identifier
-    label: str          # displayed on the tab button (no emoji)
-    description: str    # shown in placeholder until the tab is implemented
-    render: Callable[[], None]
+import app_update.tabs.verify    as _verify
+import app_update.tabs.evaluate  as _evaluate
+import app_update.tabs.reports   as _reports
+import app_update.tabs.dataset   as _dataset
+import app_update.tabs.pipeline  as _pipeline
+import app_update.tabs.registry  as _registry
+import app_update.tabs.reference as _reference
 
-
-# ── Placeholder renderer (used until a tab is implemented) ───────────────────
-
-def _placeholder(name: str, description: str) -> None:
-    st.markdown(f"### {name}")
-    st.caption(description)
-    st.info("Under construction — implementation coming next.")
-
-
-def _make_placeholder(key: str, description: str) -> Callable[[], None]:
-    def _render() -> None:
-        _placeholder(key.title(), description)
-    _render.__name__ = f"render_{key}"
-    return _render
+_RENDER = {
+    "verify":    _verify.render,
+    "evaluate":  _evaluate.render,
+    "reports":   _reports.render,
+    "dataset":   _dataset.render,
+    "pipeline":  _pipeline.render,
+    "registry":  _registry.render,
+    "reference": _reference.render,
+}
 
 
-# ── Tab registry (order = display order) ─────────────────────────────────────
-
-TABS: list[TabDef] = [
-    TabDef(
-        key="dataset",
-        label="Dataset",
-        description="Data quality, distributions, schema viewer, claim browser.",
-        render=_dataset.render,
-    ),
-    TabDef(
-        key="model",
-        label="Model",
-        description="Checkpoint browser, registry info, cache controls.",
-        render=_make_placeholder("model", "Checkpoint browser, registry info, cache controls."),
-    ),
-    TabDef(
-        key="evaluation",
-        label="Evaluation",
-        description="Batch evaluation on test set. Multi-model selector.",
-        render=_make_placeholder("evaluation", "Batch evaluation on test set. Multi-model selector."),
-    ),
-    TabDef(
-        key="report",
-        label="Report",
-        description="Training loss & accuracy curves, metrics, confusion matrix, plots.",
-        render=_make_placeholder("report", "Training loss & accuracy curves, metrics, confusion matrix, plots."),
-    ),
-    TabDef(
-        key="verify",
-        label="Verify",
-        description="Live claim verification with multi-model selector and evidence cards.",
-        render=_make_placeholder("verify", "Live claim verification with multi-model selector and evidence cards."),
-    ),
-    TabDef(
-        key="executor",
-        label="Executor",
-        description="Run pipeline stages (build · validate · test · train · evaluate · report).",
-        render=_make_placeholder("executor", "Run pipeline stages (build · validate · test · train · evaluate · report)."),
-    ),
-    TabDef(
-        key="knowledge",
-        label="Knowledge",
-        description="Reference, Hypothesis (ADRs), Source Registry.",
-        render=_make_placeholder("knowledge", "Reference, Hypothesis (ADRs), Source Registry."),
-    ),
-]
-
-
-def render_tab(tab: TabDef) -> None:
-    """Call the render function for the given tab."""
-    tab.render()
-
-
-__all__ = ["TabDef", "TABS", "render_tab"]
+def get_tabs(cfg: "AppConfig") -> list[TabDef]:
+    """Build ordered tab list from config.yaml app.tabs (icon from YAML; label from key)."""
+    return [
+        TabDef(
+            key=t["key"],
+            label=t["key"].title(),
+            icon=t["icon"],
+            render=_RENDER[t["key"]],
+        )
+        for t in cfg.tab_defs
+        if t["key"] in _RENDER
+    ]

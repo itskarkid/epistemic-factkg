@@ -9,7 +9,12 @@ Called only at inference — gradients never flow through here.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import torch
+
+if TYPE_CHECKING:
+    from src.model.architecture.arc_block import ArcBlock
 
 
 _SUPPORT_STANCE = 0  # STANCE_TO_INT["supports"]
@@ -69,6 +74,27 @@ class SymbolicAggregator:
         nei_score = 1.0 - max(float(support_score), float(refute_score))
 
         return float(support_score), float(refute_score), nei_score
+
+    def arc_block_definition(self, inference_out=None) -> "ArcBlock":
+        from src.model.architecture.arc_block import ArcBlock
+        ann: dict[str, str] = {}
+        if inference_out is not None:
+            sup = inference_out.get("support_score")
+            ref = inference_out.get("refute_score")
+            thr = inference_out.get("ec_threshold")
+            if sup is not None:
+                ann["sup"] = f"{sup:.3f}"
+            if ref is not None:
+                ann["ref"] = f"{ref:.3f}"
+            if thr is not None:
+                ann["θ"] = f"{thr:.2f}"
+        return ArcBlock(
+            name="EC Aggregation",
+            detail="SymbolicAggregator · sup/ref/nei scores via EC formula",
+            node_id="aggregation",
+            color="#d1fae5",
+            live_annotations=ann,
+        )
 
     def get_verdict(self, support_score: float, refute_score: float) -> str:
         if support_score >= 0.75 and refute_score < 0.40:

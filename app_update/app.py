@@ -1,14 +1,17 @@
+"""app_update entry point — thin Streamlit shell."""
+
 from __future__ import annotations
-from turtle import width
 
 import streamlit as st
 
-from style import CSS
-from tabs import TABS, render_tab
+from app_update.config import get_config
+from app_update.style import CSS
+from app_update.tabs import get_tabs
 
-# ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    cfg = get_config()
+
     st.set_page_config(
         page_title="Epistemic FactKG",
         page_icon="🧠",
@@ -17,22 +20,19 @@ def main() -> None:
     )
     st.markdown(CSS, unsafe_allow_html=True)
 
-    # ── Header (no sidebar) ───────────────────────────────────────────────────
     st.markdown(
         '<div class="page-header">'
-        '<span class="page-title">Epistemic Claim Verifier</span>'
+        '<span class="page-title">🧠 Epistemic FactKG</span>'
         '<span class="page-badge">Pramana · Neuro-Symbolic</span>'
-        '</div>',
+        "</div>",
         unsafe_allow_html=True,
-        width='content',
     )
-    # ── Tab layout ────────────────────────────────────────────────────────────
-    tab_labels = [t.label for t in TABS]
-    rendered = st.tabs(tab_labels)
 
-    for tab_ctx, tab_def in zip(rendered, TABS):
-        with tab_ctx:
-            render_tab(tab_def)
+    tabs = get_tabs(cfg)
+    widgets = st.tabs([f"{t.icon} {t.label}" for t in tabs])
+    for widget, tdef in zip(widgets, tabs):
+        with widget:
+            tdef.render(cfg)
 
 
 if __name__ == "__main__":

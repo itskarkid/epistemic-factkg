@@ -205,31 +205,6 @@ _MODALITY_TO_EVIDENCE_TYPES: dict[str, list[str]] = {
 }
 
 
-def get_epistemic_defaults(modality: str, source_trust: float) -> tuple[float, float]:
-    """Return (evidence_weight, is_seed) display hints for the app UI.
-
-    EW is computed from modality → evidence types → combine_evidence_weights()
-    using CONFIDENCE_WEIGHTS from epistemic/formula.py (single source of truth).
-
-    IS seed = min(0.8, max(0.1, source_trust)) — the training label formula;
-    the model predicts IS at inference; this is only a prior estimate.
-    Pass the fallback source trust for the selected source_type category.
-
-    Args:
-        modality:      String value from MODALITY enum (e.g. MODALITY.WEB_TEXT.value).
-        source_trust:  Source trust float from the registry for the selected source.
-
-    Returns:
-        (ew, is_seed) both rounded to 3 decimal places.
-    """
-    ev_types = _MODALITY_TO_EVIDENCE_TYPES.get(
-        modality, [EVIDENCE_TYPE.TESTIMONY.value]
-    )
-    ew = combine_evidence_weights(ev_types, CONFIDENCE_WEIGHTS)
-    is_seed = min(0.8, max(0.1, source_trust))
-    return round(ew, 3), round(is_seed, 3)
-
-
 # ── Node feature dimensions ───────────────────────────────────────────────────
 
 CLAIM_DIM = _EMBED_DIM + NUM_REASONING_STRATEGY  # 390

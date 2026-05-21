@@ -9,12 +9,17 @@ Output: context-enriched evidence embeddings [N_ev, hidden_dim].
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import torch
 import torch.nn as nn
 from torch_geometric.data import HeteroData
 from torch_geometric.nn import GATConv, HeteroConv
 
 from src.model.config import GraphConfig
+
+if TYPE_CHECKING:
+    from src.model.architecture.arc_block import ArcBlock
 
 
 class EpistemicEncoder(nn.Module):
@@ -37,6 +42,7 @@ class EpistemicEncoder(nn.Module):
         super().__init__()
         self.graph_config = graph_config
         self.hidden_dim = hidden_dim
+        self.heads = heads
         self.dropout = nn.Dropout(dropout)
 
         # Project each node type from its input dim to hidden_dim
@@ -63,6 +69,16 @@ class EpistemicEncoder(nn.Module):
                 add_self_loops=False,
             )
         return HeteroConv(convs, aggr="sum")
+
+    def arc_block_definition(self, inference_out=None) -> "ArcBlock":  # noqa: ARG002
+        from src.model.architecture.arc_block import ArcBlock
+        n_edge_types = len(self.graph_config.edge_types)
+        return ArcBlock(
+            name="GNN Encoder",
+            detail=f"HeteroConv · {self.heads} GAT heads · 2 layers · {n_edge_types} edge types → {self.hidden_dim}d",
+            node_id="gnn_encoder",
+            color="#e0f2fe",
+        )
 
     def forward(self, data: HeteroData) -> dict[str, torch.Tensor]:
         """Run two-layer message passing.

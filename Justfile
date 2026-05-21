@@ -208,12 +208,12 @@ compare model1 model2:
 # ╚═════════════════════════════════════════════════════════════════════════════╝
 
 [group("Demo")]
-[doc("Launch the Streamlit demo app (requires trained checkpoints)")]
+[doc("Launch the Streamlit app (requires trained checkpoints)")]
 app:
-    uv run streamlit run app/app.py  --server.port 8080
+    uv run streamlit run app_update/app.py
 
 [group("Demo")]
-[doc("Launch the updated Streamlit app (new UI skeleton)")]
-app-next:
-    uv run streamlit run app_update/app.py
+[doc("Launch the legacy Streamlit app")]
+app-legacy:
+    uv run streamlit run app/app.py --server.port 8080
 

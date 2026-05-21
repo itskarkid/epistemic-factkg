@@ -38,6 +38,7 @@ class HybridHGNN(nn.Module):
         dropout:       Encoder inter-layer dropout.
     """
 
+
     def __init__(
         self,
         graph_config: GraphConfig | None = None,
@@ -54,6 +55,33 @@ class HybridHGNN(nn.Module):
         self.verdict_head = HybridVerdictHead(hidden_dim)
         self.aggregator = SymbolicAggregator()
         self.ec_threshold = ec_threshold
+
+    def arc_block_definition(self, inference_out=None):
+        from src.model.architecture.arc_block import ArcBlock, CompositeArcBlock
+        return CompositeArcBlock(
+            blocks=[
+                ArcBlock("Input Features", "Claim 390d · Evidence 400d", node_id="input_features", color="#dbeafe"),
+                self.encoder.arc_block_definition(inference_out),
+                self.stance_head.arc_block_definition(inference_out),
+                self.is_head.arc_block_definition(inference_out),
+                ArcBlock("EC Formula", "EC = 1−(1−ST)^(EW×IS) · per-evidence score", node_id="ec_formula", color="#d1fae5"),
+                self.aggregator.arc_block_definition(inference_out),
+                self.verdict_head.arc_block_definition(inference_out),
+            ],
+            title="HybridHGNN",
+        )
+
+    def result_dot(self, result: dict) -> str:
+        from src.model.architecture.arc_block import result_dot
+        return result_dot(result)
+
+    def decision_path_info(self, result: dict) -> dict:
+        from src.model.architecture.arc_block import decision_path_info
+        return decision_path_info(result)
+
+    def evidence_table(self, result: dict) -> list[dict]:
+        from src.model.architecture.arc_block import evidence_table
+        return evidence_table(result)
 
     def forward(self, data: HeteroData) -> dict[str, torch.Tensor]:
         """Training forward pass.
@@ -117,6 +145,61 @@ class HybridHGNN(nn.Module):
             "support_score": sup,
             "refute_score": ref,
             "verdict": verdict,
+        }
+
+    def build_prediction_payload(
+        self,
+        out: dict,
+        graph_data: HeteroData,
+        resolved_items: list[dict],
+    ) -> dict:
+        """Convert raw predict() output to app-level payload dict."""
+        from src.epistemic.formula import compute_evidence_confidence
+        from src.model.data.types import STANCE_TO_INT, NodeType
+
+        _int_to_stance = {}
+        for k, v in STANCE_TO_INT.items():
+            if v not in _int_to_stance:
+                _int_to_stance[v] = k
+
+        stance_probs  = torch.softmax(out["stance_logits"], dim=-1)
+        verdict_probs = torch.softmax(out["verdict_logits"], dim=-1)[0].tolist()
+
+        ev_data = graph_data[NodeType.EVIDENCE]
+        ew_vals = ev_data.ew.tolist()
+        st_vals = ev_data.st.tolist()
+        is_vals = out["is_pred"].view(-1).tolist()
+
+        breakdown = []
+        for i in range(min(len(resolved_items), len(out["stance_pred"]))):
+            s_idx = int(out["stance_pred"][i].item())
+            ec    = compute_evidence_confidence(st_vals[i], ew_vals[i], is_vals[i])
+            ev    = resolved_items[i]
+            text  = ev.get("text", "")
+            breakdown.append({
+                "text":              text,
+                "text_short":        (text[:150] + "…") if len(text) > 150 else text,
+                "modality":          ev.get("modality", "web_text"),
+                "source_type":       ev.get("source_type", "unknown"),
+                "stance":            _int_to_stance.get(s_idx, "not_enough_evidence"),
+                "stance_confidence": round(float(stance_probs[i, s_idx].item()), 3),
+                "is_score":          round(is_vals[i], 3),
+                "source_trust":      round(st_vals[i], 3),
+                "evidence_weight":   round(ew_vals[i], 3),
+                "ec_score":          round(ec, 3),
+                "source_id":         ev.get("source_id", ""),
+                "nli_probs":         None,
+            })
+
+        return {
+            "verdict":            out["verdict"],
+            "verdict_probs":      verdict_probs,
+            "support_score":      float(out.get("support_score", 0.0)),
+            "refute_score":       float(out.get("refute_score",  0.0)),
+            "has_ec":             True,
+            "ec_threshold":       self.ec_threshold,
+            "evidence_breakdown": breakdown,
+            "hetero_data":        graph_data,
         }
 
     # ------------------------------------------------------------------

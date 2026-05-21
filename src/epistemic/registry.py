@@ -57,6 +57,9 @@ _COMPOUND_TLDS: frozenset[str] = frozenset(
 def load_source_trust_registry(path: str | Path) -> dict[str, dict]:
     """Load source_trust_registry.jsonl into a dict keyed by source_id.
 
+    Raises ValueError if any required generic fallback entry is missing.
+    Raises ValueError listing missing source_ids if coverage is incomplete.
+
     Returns:
         {source_id: full registry record dict}
     """
@@ -67,6 +70,14 @@ def load_source_trust_registry(path: str | Path) -> dict[str, dict]:
             if line:
                 record = json.loads(line)
                 registry[record["source_id"]] = record
+
+    missing = verify_generic_fallback_coverage(registry)
+    if missing:
+        raise ValueError(
+            f"Registry at '{path}' is missing {len(missing)} generic fallback "
+            f"entries: {missing}. Add a '{{source_type}}_{{modality}}' entry for each."
+        )
+
     return registry
 
 
@@ -136,6 +147,21 @@ def get_source_trust(source_id: str, registry: dict[str, dict]) -> float:
     """Return ST_i for a source_id, or DEFAULT_SOURCE_TRUST if not found."""
     entry = registry.get(source_id)
     return entry["source_trust"] if entry else DEFAULT_SOURCE_TRUST
+
+
+def verify_generic_fallback_coverage(registry: dict[str, dict]) -> list[str]:
+    """Return missing generic fallback source_ids.
+
+    For every (source_type, modality) pair that appears in the registry,
+    there must be an entry whose source_id == f'{source_type}_{modality}'.
+    Returns an empty list when coverage is complete.
+    """
+    combos = {(e["source_type"], e["modality"]) for e in registry.values()}
+    return [
+        f"{st}_{mod}"
+        for st, mod in sorted(combos)
+        if f"{st}_{mod}" not in registry
+    ]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

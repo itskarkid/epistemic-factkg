@@ -9,8 +9,13 @@ H2 ISHead      : scalar regression in [0, 1] (inference strength)
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import torch
 import torch.nn as nn
+
+if TYPE_CHECKING:
+    from src.model.architecture.arc_block import ArcBlock
 
 
 class StanceHead(nn.Module):
@@ -26,6 +31,25 @@ class StanceHead(nn.Module):
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
             nn.Linear(hidden_dim // 2, 3),
+        )
+
+    def arc_block_definition(self, inference_out=None) -> "ArcBlock":
+        from src.model.architecture.arc_block import ArcBlock
+        ann: dict[str, str] = {}
+        if inference_out is not None:
+            sp = inference_out.get("stance_pred")
+            if sp is not None:
+                n   = sp.shape[0]
+                sup = int((sp == 0).sum())
+                ref = int((sp == 1).sum())
+                nei = int((sp == 2).sum())
+                ann["sup/ref/nei"] = f"{sup}/{ref}/{nei} of {n}"
+        return ArcBlock(
+            name="Stance Head H1",
+            detail="Linear(hidden→3) · supports / refutes / neutral per evidence",
+            node_id="stance_head",
+            color="#fef3c7",
+            live_annotations=ann,
         )
 
     def forward(self, ev_emb: torch.Tensor) -> torch.Tensor:
@@ -46,6 +70,19 @@ class VerdictHead(nn.Module):
             nn.Linear(3, 32),
             nn.ReLU(),
             nn.Linear(32, 3),
+        )
+
+    def arc_block_definition(self, inference_out=None) -> "ArcBlock":
+        from src.model.architecture.arc_block import ArcBlock
+        ann: dict[str, str] = {}
+        if inference_out is not None and inference_out.get("verdict"):
+            ann["verdict"] = inference_out["verdict"]
+        return ArcBlock(
+            name="Verdict Head",
+            detail="VerdictHead · EC scores [3] → 3-class logits",
+            node_id="verdict_head",
+            color="#fce7f3",
+            live_annotations=ann,
         )
 
     def forward(self, scores: torch.Tensor) -> torch.Tensor:
@@ -75,6 +112,23 @@ class HybridVerdictHead(nn.Module):
             nn.Linear(_PROJ_DIM, 3),
         )
 
+    def arc_block_definition(self, inference_out=None) -> "ArcBlock":
+        from src.model.architecture.arc_block import ArcBlock
+        ann: dict[str, str] = {}
+        if inference_out is not None:
+            if inference_out.get("verdict"):
+                ann["verdict"] = inference_out["verdict"]
+            vp = inference_out.get("verdict_probs")
+            if vp:
+                ann["probs"] = "[" + ", ".join(f"{p:.2f}" for p in vp) + "]"
+        return ArcBlock(
+            name="Hybrid Verdict",
+            detail="HybridVerdictHead · EC scores + claim_emb → 3-class",
+            node_id="verdict_head",
+            color="#fce7f3",
+            live_annotations=ann,
+        )
+
     def forward(self, scores: torch.Tensor, claim_emb: torch.Tensor) -> torch.Tensor:
         """scores: [N_claims, 3], claim_emb: [N_claims, hidden_dim]."""
         proj = self.claim_proj(claim_emb)
@@ -95,6 +149,22 @@ class ISHead(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim // 2, 1),
             nn.Sigmoid(),
+        )
+
+    def arc_block_definition(self, inference_out=None) -> "ArcBlock":
+        from src.model.architecture.arc_block import ArcBlock
+        ann: dict[str, str] = {}
+        if inference_out is not None:
+            is_pred = inference_out.get("is_pred")
+            if is_pred is not None:
+                vals = is_pred.view(-1).tolist()
+                ann["IS mean"] = f"{sum(vals) / len(vals):.3f}"
+        return ArcBlock(
+            name="IS Head H2",
+            detail="Linear(hidden→1) · inference strength [0, 1] per evidence",
+            node_id="is_head",
+            color="#fef3c7",
+            live_annotations=ann,
         )
 
     def forward(self, ev_emb: torch.Tensor) -> torch.Tensor:

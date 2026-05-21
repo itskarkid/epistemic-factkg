@@ -1,58 +1,121 @@
-"""Centralised path & model configuration for app_update.
+"""AppConfig — single config object for app_update.
 
-Reads ``configs/config.yaml`` (the project's single config source).
-YAML is parsed once at import time; all paths are resolved as absolute
-``pathlib.Path`` objects relative to the project root.
+Reads configs/config.yaml for paths and display metadata.
+Derives enum-based values directly from src/ (no duplication).
 
-Usage::
-
-    from config import UNIFIED_JSONL, MODEL_NAME, VERDICT_COLORS, ...
+Usage:
+    from app_update.config import get_config, enum_label
+    cfg = get_config()
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
 
-# Project root = parent of this file's parent (app_update/../)
+
+# Project root = two levels up from this file (app_update/config.py → project root)
 ROOT: Path = Path(__file__).parent.parent.resolve()
 
-_cfg: dict = yaml.safe_load(
-    (ROOT / "configs" / "config.yaml").read_text(encoding="utf-8")
-)
-_app: dict   = _cfg.get("app",   {})
-_paths: dict  = _app.get("paths",  {})
-_model: dict  = _app.get("model",  {})
-_colors: dict = _app.get("colors", {})
+
+def enum_label(value: str) -> str:
+    """Derive a human-readable label from an enum string value.
+
+    "not_enough_evidence" → "Not Enough Evidence"
+    "web_text"            → "Web Text"
+    "news_media"          → "News Media"
+    """
+    return value.replace("_", " ").title()
 
 
-def _p(key: str, fallback: str) -> Path:
-    """Resolve paths.<key> from config.yaml as an absolute Path."""
-    return ROOT / _paths.get(key, fallback)
+@dataclass(frozen=True)
+class AppConfig:
+    # ── Paths ──────────────────────────────────────────────────────────────────
+    root:             Path
+    unified_jsonl:    Path
+    training_jsonl:   Path
+    registry_path:    Path
+    splits_dir:       Path
+    reports_root:     Path
+    graph_cache_dir:  Path
+    data_report_dir:  Path
+
+    # ── Display — from config.yaml (no label strings; use enum_label() at render time)
+    verdict_display:    dict   # {key: {emoji, color, css_class}}
+    stance_display:     dict   # {key: {color, css_class}}
+    model_descriptions: dict   # {model_key: str}
+
+    # ── EC ─────────────────────────────────────────────────────────────────────
+    default_ec_threshold: float
+
+    # ── Tab definitions — icon from YAML; label = key.title() ─────────────────
+    tab_defs: tuple   # tuple of dicts [{key, icon}, ...]  (frozen → tuple)
+
+    # ── Derived from src/ — NOT from YAML ──────────────────────────────────────
+    model_keys:              tuple   # list(MODELS.keys())
+    modality_values:         tuple   # [m.value for m in MODALITY]
+    source_type_values:      tuple   # [s.value for s in SOURCE_TYPE]
+    modality_evidence_types: dict    # _MODALITY_TO_EVIDENCE_TYPES
+    int_to_verdict:          dict    # VERDICT_TO_INT inverted
+    int_to_stance:           dict    # STANCE_TO_INT inverted (unique ints only)
 
 
-# ── Pipeline / output paths (used by app tabs) ────────────────────────────────
-CONFIG            = ROOT / "configs" / "config.yaml"
-REGISTRY          = _p("registry",           "data/registry/source_trust_registry.jsonl")
-SEED_POOL         = _p("seed_pool",           "data/registry/seed_pool.jsonl")
-UNIFIED_JSONL     = _p("unified_jsonl",       "out/data/unified/epistemic_factkg.jsonl")
-TRAINING_JSONL    = _p("training_jsonl",      "out/data/training/epistemic_factkg_training.jsonl")
-VALIDATION_JSON   = _p("validation_json",     "out/reports/data/validation.json")
-TRAINING_VALIDATION = _p("training_validation", "out/reports/data/training_validation.json")
-REPORT_DIR        = _p("report_dir",          "out/reports/data")
-SPLITS_DIR        = _p("splits_dir",          "out/data/splits")
-GRAPH_DATASET     = _p("graph_dataset",       "out/model/graphs/graph_dataset.pt")
-GRAPH_DATASET_NLI = _p("graph_dataset_nli",   "out/model/graphs/graph_dataset_nli.pt")
+@lru_cache(maxsize=1)
+def get_config() -> AppConfig:
+    """Load and return the singleton AppConfig.
 
-# ── Model ─────────────────────────────────────────────────────────────────────
-MODEL_NAME: str  = _model.get("name", "v1-hgnn")
-CHECKPOINTS_DIR  = ROOT / f"out/model/{MODEL_NAME}/checkpoints"
-MODEL_REPORT_DIR = ROOT / f"out/reports/model/{MODEL_NAME}"
-RESULTS_DIR      = ROOT / f"out/reports/model/{MODEL_NAME}/eval"
+    Reads configs/config.yaml once; derives enum values from src/.
+    Cached so repeated calls are free.
+    """
+    raw = yaml.safe_load((ROOT / "configs" / "config.yaml").read_text(encoding="utf-8"))
+    app = raw.get("app", {})
+    paths = app.get("paths", {})
+    display = app.get("display", {})
+    models_cfg = app.get("models", {})
+    ec_cfg = app.get("ec", {})
+    tabs_cfg = app.get("tabs", [])
 
-# ── Colors ────────────────────────────────────────────────────────────────────
-COLORS: dict         = _colors                         # full colors block
-VERDICT_COLORS: dict = _colors.get("verdict", {})      # keyed by verdict label
-LAYER_COLORS: dict   = _colors.get("layer",   {})      # keyed by layer name
-CHIP_COLORS: dict    = _colors.get("chip",    {})      # keyed by chip variant
+    def p(key: str, fallback: str) -> Path:
+        return ROOT / paths.get(key, fallback)
+
+    # Import from src/ — single source of truth
+    from src.model.models import MODELS
+    from src.model.data.types import (
+        MODALITY,
+        SOURCE_TYPE,
+        VERDICT_TO_INT,
+        STANCE_TO_INT,
+        _MODALITY_TO_EVIDENCE_TYPES,
+    )
+
+    int_to_verdict = {v: k for k, v in VERDICT_TO_INT.items()}
+    # STANCE_TO_INT has duplicate ints (nee and conflicting both → 2); keep first seen
+    int_to_stance: dict[int, str] = {}
+    for k, v in STANCE_TO_INT.items():
+        if v not in int_to_stance:
+            int_to_stance[v] = k
+
+    return AppConfig(
+        root=ROOT,
+        unified_jsonl=p("unified_jsonl",   "out/data/unified/epistemic_factkg.jsonl"),
+        training_jsonl=p("training_jsonl",  "out/data/training/epistemic_factkg_training.jsonl"),
+        registry_path=p("registry",         "data/registry/source_trust_registry.jsonl"),
+        splits_dir=p("splits_dir",          "out/data/splits"),
+        reports_root=p("reports_root",      "out/model"),
+        graph_cache_dir=p("graph_cache_dir","out/model"),
+        data_report_dir=p("data_report_dir","out/reports/data"),
+        verdict_display=display.get("verdict", {}),
+        stance_display=display.get("stance", {}),
+        model_descriptions=models_cfg.get("descriptions", {}),
+        default_ec_threshold=float(ec_cfg.get("default_threshold", 0.35)),
+        tab_defs=tuple(tabs_cfg),
+        model_keys=tuple(MODELS.keys()),
+        modality_values=tuple(m.value for m in MODALITY),
+        source_type_values=tuple(s.value for s in SOURCE_TYPE),
+        modality_evidence_types=dict(_MODALITY_TO_EVIDENCE_TYPES),
+        int_to_verdict=int_to_verdict,
+        int_to_stance=int_to_stance,
+    )

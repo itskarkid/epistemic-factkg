@@ -7,6 +7,49 @@
 #   ai2thor:     simulator controller, KG policy, scene list, generation params
 #   synthetic:   LLM generator config (model, n_records, distribution)
 
+# ── App configuration ─────────────────────────────────────────────────────────
+# Read by app_update/config.py; ignored by the data/model pipeline.
+# Labels are NOT stored here — derive from enum values via enum_label() at render time.
+# Only non-derivable attributes: colors, emojis, CSS classes, model descriptions, paths.
+app:
+  paths:
+    unified_jsonl:   out/data/unified/epistemic_factkg.jsonl
+    training_jsonl:  out/data/training/epistemic_factkg_training.jsonl
+    registry:        data/registry/source_trust_registry.jsonl
+    splits_dir:      out/data/splits
+    reports_root:    out/reports/model
+    graph_cache_dir: out/model
+    data_report_dir: out/reports/data
+
+  display:
+    verdict:
+      supported:            { emoji: "✅", color: "#1a7340", css_class: verdict-supported }
+      refuted:              { emoji: "❌", color: "#c0392b", css_class: verdict-refuted }
+      not_enough_evidence:  { emoji: "~",  color: "#7f8c8d", css_class: verdict-nee }
+      conflicting_evidence: { emoji: "⚠️", color: "#e67e22", css_class: verdict-conflict }
+    stance:
+      supports:             { color: "#27ae60", css_class: chip-support }
+      refutes:              { color: "#e74c3c", css_class: chip-refute }
+      not_enough_evidence:  { color: "#95a5a6", css_class: chip-neutral }
+  models:
+    descriptions:
+      baseline: "GNN encoder → VerdictHead only. No epistemic confidence formula."
+      v1-hgnn:  "Adds EC formula with symbolic decision at threshold θ."
+      v2-hgnn:  "EC scalar also feeds VerdictHead as auxiliary feature."
+      v3-nli:   "DeBERTa-v3-small NLI replaces H1 (stance encoder)."
+
+  ec:
+    default_threshold: 0.35
+
+  tabs:
+    - { key: verify,    icon: "🔍" }
+    - { key: evaluate,  icon: "📊" }
+    - { key: reports,   icon: "📈" }
+    - { key: dataset,   icon: "🗄️" }
+    - { key: pipeline,  icon: "⚙️" }
+    - { key: registry,  icon: "📝" }
+    - { key: reference, icon: "📚" }
+
 # ── Shared: epistemic weights ─────────────────────────────────────────────────
 # Used by combine_evidence_weights() to compute EW_i in EC formula (ADR-010).
 # These are per-evidence-type weights; assignment is now per-evidence (v3.0).

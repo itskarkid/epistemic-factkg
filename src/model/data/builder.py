@@ -63,6 +63,32 @@ class ClaimGraphBuilder:
     # Public API
     # ------------------------------------------------------------------
 
+    def build_from_items(
+        self,
+        claim: str,
+        resolved_items: list[dict],
+    ) -> ClaimGraph | None:
+        """Build a ClaimGraph from pre-resolved evidence items (app inference path).
+
+        resolved_items elements must have: text, modality, source_id, resolved_trust.
+        - evidence_types derived from _MODALITY_TO_EVIDENCE_TYPES (src/)
+        - verdict and reasoning omitted — builder already defaults both
+        """
+        from src.model.data.types import _MODALITY_TO_EVIDENCE_TYPES
+
+        evidence = []
+        for ev in resolved_items:
+            modality = ev.get("modality", "web_text")
+            evidence.append({
+                "text":           ev["text"],
+                "stance":         None,
+                "modality":       modality,
+                "evidence_types": _MODALITY_TO_EVIDENCE_TYPES.get(modality, ["testimony"]),
+                "source_id":      ev.get("source_id") or f"{ev.get('source_type', 'unknown')}_{modality}",
+                "triples":        ev.get("triples") or [],
+            })
+        return self.build({"claim": claim, "evidence": evidence})
+
     def build(self, record: dict) -> ClaimGraph | None:
         """Convert a single v3.0 record to a ClaimGraph.
 
