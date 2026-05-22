@@ -1,11 +1,12 @@
 {
   "hidden_dim": 256,
-  "heads": 4,
+  "heads": 2,
   "dropout": 0.2,
-  "lr": 0.0006611213764022802,
-  "weight_decay": 1.4013425871064396e-05,
-  "is_loss_weight": 2.6515675615034167,
-  "_best_val_loss": 0.8882,
+  "ec_threshold": 0.30000000000000004,
+  "lr": 0.005335929200572066,
+  "weight_decay": 0.0009544394161064345,
+  "is_loss_weight": 1.4756435109283312,
+  "_best_val_loss": 0.8504,
   "_n_trials": 30,
   "_model": "v2-hgnn"
 }

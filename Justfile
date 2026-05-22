@@ -152,15 +152,22 @@ graph-nli:
 
 
 [group("Model Pipeline")]
-[doc("Hyperparameter search via Optuna — saves best params to configs/hparams/best_hparams.json (reused by `just train` automatically)")]
+[doc("Hyperparameter search — GPU/Colab-aware. Local GPU → runs directly. CPU-only → builds colab_upload.zip + opens notebook.")]
 hparam-search model=MODEL_NAME n_trials="30":
-    uv run python -c "import pathlib; pathlib.Path('configs/hparams').mkdir(parents=True, exist_ok=True)"
-    uv run python -m src.pipeline.model.hparam_search \
-        --model {{model}} \
-        --jsonl {{TRAINING_JSONL}} \
-        --splits-dir {{SPLITS_DIR}} \
-        --n-trials {{n_trials}} \
-        --batch-size 32
+    uv run python scripts/hparam_colab/run.py --model {{model}} --n-trials {{n_trials}}
+
+[group("Model Pipeline")]
+[doc("Force Colab notebook path for hparam search, regardless of local GPU.")]
+hparam-colab model=MODEL_NAME n_trials="30":
+    uv run python scripts/hparam_colab/run.py --model {{model}} --n-trials {{n_trials}} --force-colab
+
+
+[group("Model Pipeline")]
+[doc("Build colab_upload.zip from source + data, and open notebooks/hparam_colab.ipynb")]
+colab-prep n_trials="30":
+    uv run python scripts/hparam_colab/gen_notebook.py --n-trials {{n_trials}}
+    uv run python scripts/hparam_colab/prep.py
+    uv run python scripts/hparam_colab/open_nb.py notebooks/hparam_colab.ipynb
 
 
 [group("Model Pipeline")]
