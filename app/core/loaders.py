@@ -57,6 +57,48 @@ def load_test_records(training_jsonl: Path, splits_dir: Path) -> list[dict]:
     return records
 
 
+@st.cache_data(show_spinner=False)
+def load_val_records(training_jsonl: Path, splits_dir: Path) -> list[dict]:
+    """Records belonging to the val split."""
+    val_idx_path = splits_dir / "val_indices.json"
+    if not training_jsonl.exists() or not val_idx_path.exists():
+        return []
+    indices = set(json.loads(val_idx_path.read_text(encoding="utf-8"))["indices"])
+    records: list[dict] = []
+    with open(training_jsonl, encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            if i in indices:
+                records.append(json.loads(line))
+    return records
+
+
+@st.cache_data(show_spinner=False)
+def load_probe_records() -> list[dict]:
+    """Load probe JSONL and convert to pseudo-records compatible with load_record_into_state."""
+    probe_path = Path("data/probes/epistemic_probes.jsonl")
+    if not probe_path.exists():
+        return []
+    records = []
+    for line in probe_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        p = json.loads(line)
+        records.append({
+            "id":      p["id"],
+            "claim":   p["claim"],
+            "verdict": {"label": p["expected_verdict"]},
+            "evidence": p["evidence"],
+            "provenance": {"dataset": "probe"},
+            "_probe_meta": {
+                "name":             p["name"],
+                "category":         p["category"],
+                "expected_behavior": p["expected_behavior"],
+            },
+        })
+    return records
+
+
 # ── Dataset stats ─────────────────────────────────────────────────────────────
 
 @st.cache_data(show_spinner=False)

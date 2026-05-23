@@ -86,8 +86,18 @@ _VERDICT_COLOR = {
 }
 
 
+def _make_reason(ec_decision: str, final_layer: str, sup: float, ref: float, thr: float) -> str:
+    if ec_decision == "supported":
+        return f"Support signal decisive (sup={sup:.3f} > θ={thr:.2f}, ref={ref:.3f})."
+    if ec_decision == "refuted":
+        return f"Refute signal decisive (ref={ref:.3f} > θ={thr:.2f}, sup={sup:.3f})."
+    if ec_decision == "conflicted":
+        return f"Both sides decisive (sup={sup:.3f}, ref={ref:.3f} > θ={thr:.2f}) — VerdictHead resolves conflict."
+    return f"EC below threshold on both sides (sup={sup:.3f}, ref={ref:.3f} ≤ θ={thr:.2f}) — VerdictHead decides."
+
+
 def decision_path_info(result: dict) -> dict:
-    """Derive which EC decision path was taken from a build_prediction_payload result."""
+    """Extract EC vs VerdictHead decision layer info from a build_prediction_payload result."""
     has_ec = result.get("has_ec", False)
     if not has_ec:
         return {
@@ -96,38 +106,49 @@ def decision_path_info(result: dict) -> dict:
             "support_score": 0.0,
             "refute_score": 0.0,
             "ec_threshold": None,
+            "ec_decision": None,
+            "final_layer": "verdicthead",
+            "vh_pred": None,
             "override_reason": "Baseline model — no EC formula.",
         }
-    sup = result.get("support_score", 0.0)
-    ref = result.get("refute_score", 0.0)
-    thr = result.get("ec_threshold", 0.35)
 
-    if sup > thr and ref > thr:
+    sup = result.get("support_score", 0.0)
+    ref = result.get("refute_score",  0.0)
+    thr = result.get("ec_threshold",  0.35)
+
+    # Prefer explicit fields passed through from predict(); fall back to score derivation
+    # for older model outputs that predate this change.
+    ec_decision = result.get("ec_decision")
+    final_layer = result.get("final_layer")
+    vh_pred     = result.get("vh_pred")
+
+    if ec_decision is None:
+        if sup > thr and ref > thr:
+            ec_decision, final_layer = "conflicted", "verdicthead"
+        elif sup > thr:
+            ec_decision, final_layer = "supported",  "ec_symbolic"
+        elif ref > thr:
+            ec_decision, final_layer = "refuted",    "ec_symbolic"
+        else:
+            ec_decision, final_layer = "deferred",   "verdicthead"
+
+    if final_layer == "ec_symbolic":
+        path = "symbolic_override"
+    elif ec_decision == "conflicted":
         path = "conflicting"
-        reason = (
-            f"Both sides decisive (sup={sup:.2f}, ref={ref:.2f} > θ={thr:.2f})"
-            " — VerdictHead decides."
-        )
-    elif ref > sup and ref > thr:
-        path = "symbolic_override"
-        reason = f"Refute signal decisive (ref={ref:.2f} > sup={sup:.2f}, > θ={thr:.2f})."
-    elif sup > ref and sup > thr:
-        path = "symbolic_override"
-        reason = f"Support signal decisive (sup={sup:.2f} > ref={ref:.2f}, > θ={thr:.2f})."
     else:
         path = "weak_ec"
-        reason = (
-            f"EC weak on both sides (sup={sup:.2f}, ref={ref:.2f} ≤ θ={thr:.2f})"
-            " — VerdictHead decides."
-        )
 
     return {
-        "path": path,
-        "has_ec": True,
-        "support_score": sup,
-        "refute_score": ref,
-        "ec_threshold": thr,
-        "override_reason": reason,
+        "path":           path,
+        "has_ec":         True,
+        "support_score":  sup,
+        "refute_score":   ref,
+        "ec_threshold":   thr,
+        "ec_decision":    ec_decision,
+        "final_layer":    final_layer,
+        "vh_pred":        vh_pred,
+        "override_reason": _make_reason(ec_decision, final_layer, sup, ref, thr),
     }
 
 

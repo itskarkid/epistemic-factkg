@@ -252,6 +252,8 @@ def main() -> None:
     support_scores: list[float] = []
     refute_scores:  list[float] = []
 
+    sb_verdict_preds: list[int] = []
+    sb_verdict_trues: list[int] = []
     skipped_ids: list[str] = []
     with torch.no_grad():
         for record in test_records:
@@ -283,6 +285,9 @@ def main() -> None:
             claim_ids.append(record.get("id", "unknown"))
             support_scores.append(float(out.get("support_score", 0.0)))
             refute_scores.append(float(out.get("refute_score", 0.0)))
+            if record.get("meta", {}).get("is_shortcut_breaking", False):
+                sb_verdict_preds.append(v_pred)
+                sb_verdict_trues.append(v_true)
 
     if not verdict_preds:
         print("No test records evaluated — check splits-dir and jsonl path.")
@@ -403,6 +408,46 @@ def main() -> None:
         claim_ids, support_scores, refute_scores,
     )
     verdict_metrics["decision_paths"] = decision_path_stats
+
+    # ── Layer analysis: EC symbolic vs VerdictHead ────────────────────────────
+    def _layer_metrics(indices: list[int]) -> dict | None:
+        if not indices:
+            return None
+        pt = torch.tensor([verdict_preds[i] for i in indices], dtype=torch.long)
+        tt = torch.tensor([verdict_trues[i] for i in indices], dtype=torch.long)
+        ss = [source_labels[i] for i in indices]
+        return {
+            "n":          len(indices),
+            "coverage":   round(len(indices) / len(verdict_preds), 4),
+            "accuracy":   round(compute_accuracy(pt, tt), 4),
+            "macro_f1":   round(compute_macro_f1(pt, tt, NUM_VERDICT), 4),
+            "per_class":  {_INT_TO_VERDICT[k]: v for k, v in compute_per_class_metrics(pt, tt, NUM_VERDICT).items()},
+            "per_source": compute_per_group_accuracy(pt, tt, ss),
+        }
+
+    ec_idx = [i for i, dp in enumerate(decision_paths) if dp in ("symbolic_supported", "symbolic_refuted")]
+    vh_idx = [i for i, dp in enumerate(decision_paths) if dp in ("vh_conflict", "vh_fallback")]
+    layer_analysis = {
+        "ec_layer": _layer_metrics(ec_idx),
+        "vh_layer": _layer_metrics(vh_idx),
+    }
+    verdict_metrics["layer_analysis"] = layer_analysis
+    ec_l = layer_analysis["ec_layer"]
+    vh_l = layer_analysis["vh_layer"]
+
+    # ── Shortcut-breaking subset accuracy ─────────────────────────────────────
+    sb_metrics: dict | None = None
+    if sb_verdict_preds:
+        sb_pred_t = torch.tensor(sb_verdict_preds, dtype=torch.long)
+        sb_true_t = torch.tensor(sb_verdict_trues, dtype=torch.long)
+        sb_per_class_raw = compute_per_class_metrics(sb_pred_t, sb_true_t, NUM_VERDICT)
+        sb_metrics = {
+            "n": len(sb_verdict_preds),
+            "accuracy": round(compute_accuracy(sb_pred_t, sb_true_t), 4),
+            "macro_f1": round(compute_macro_f1(sb_pred_t, sb_true_t, NUM_VERDICT), 4),
+            "per_class": {_INT_TO_VERDICT[k]: v for k, v in sb_per_class_raw.items()},
+        }
+    verdict_metrics["shortcut_breaking"] = sb_metrics
 
     # ── Write output files ────────────────────────────────────────────────────
     (output_dir / "stance_metrics.json").write_text(
@@ -535,6 +580,40 @@ def main() -> None:
             for r in decision_path_stats["vh_conflict_failures"]
         )
         + f"\n---\n\n"
+        f"## Layer Analysis\n\n"
+        f"Separates claims decided by the **EC symbolic layer** (score crossed θ) from those decided by the **VerdictHead** (EC ambiguous).\n\n"
+        f"| Layer | N | Coverage | Accuracy | Macro F1 |\n"
+        f"|-------|---|----------|----------|----------|\n"
+        + (
+            f"| EC symbolic | {ec_l['n']} | {ec_l['coverage']*100:.1f}% | {ec_l['accuracy']:.4f} | {ec_l['macro_f1']:.4f} |\n"
+            f"| VerdictHead | {vh_l['n']} | {vh_l['coverage']*100:.1f}% | {vh_l['accuracy']:.4f} | {vh_l['macro_f1']:.4f} |\n"
+            f"| Combined    | {len(verdict_preds)} | 100.0% | {verdict_metrics['accuracy']:.4f} | {verdict_metrics['macro_f1']:.4f} |\n\n"
+            if ec_l and vh_l else "_Layer analysis unavailable._\n\n"
+        )
+        + (
+            f"### EC Layer — per source\n\n"
+            f"| Source | Accuracy | N |\n|--------|----------|---|\n"
+            + "\n".join(f"| {s} | {m['accuracy']:.3f} | {m['support']} |" for s, m in ec_l["per_source"].items())
+            + f"\n\n### VerdictHead Layer — per source\n\n"
+            f"| Source | Accuracy | N |\n|--------|----------|---|\n"
+            + "\n".join(f"| {s} | {m['accuracy']:.3f} | {m['support']} |" for s, m in vh_l["per_source"].items())
+            + "\n\n"
+            if ec_l and vh_l else ""
+        )
+        + f"---\n\n"
+        f"## Shortcut-Breaking Subset\n\n"
+        + (
+            f"Records with `meta.is_shortcut_breaking=true` — supporting stance + low-trust source → NEI/refuted.\n"
+            f"A model that learned stance→verdict lookup fails these; a model applying the EC formula passes them.\n\n"
+            f"| Metric | Value |\n|--------|-------|\n"
+            f"| N | {sb_metrics['n']} |\n"
+            f"| Accuracy | {sb_metrics['accuracy']:.4f} |\n"
+            f"| Macro F1 | {sb_metrics['macro_f1']:.4f} |\n\n"
+            f"| Class | Precision | Recall | F1 | N |\n|-------|-----------|--------|----|---|\n"
+            + _pc_rows(sb_metrics["per_class"]) + "\n\n"
+            if sb_metrics else "_No shortcut-breaking records in this split._\n\n"
+        )
+        + f"---\n\n"
         f"## Plots\n\n"
         f"![Confusion Matrix](plots/confusion_matrix.png)\n\n"
         f"![Per-Class F1](plots/class_f1.png)\n\n"
@@ -591,6 +670,20 @@ def main() -> None:
             continue
         acc_str = f"acc={m['accuracy']:.3f}" if m.get("accuracy") is not None else "acc=—"
         print(f"  {path:<24}  n={cnt:<4}  correct={m['correct']:<4}  {acc_str}")
+    if ec_l and vh_l:
+        print()
+        print("Layer Analysis")
+        print(f"  {'Layer':<18}  {'N':<5}  {'Coverage':<10}  {'Accuracy':<10}  Macro F1")
+        print(f"  {'EC symbolic':<18}  {ec_l['n']:<5}  {ec_l['coverage']*100:>6.1f}%     "
+              f"{ec_l['accuracy']:.4f}      {ec_l['macro_f1']:.4f}")
+        print(f"  {'VerdictHead':<18}  {vh_l['n']:<5}  {vh_l['coverage']*100:>6.1f}%     "
+              f"{vh_l['accuracy']:.4f}      {vh_l['macro_f1']:.4f}")
+        print(f"  {'Combined':<18}  {len(verdict_preds):<5}  {'100.0%':<10}  "
+              f"{verdict_metrics['accuracy']:.4f}      {verdict_metrics['macro_f1']:.4f}")
+    if sb_metrics:
+        print()
+        print("Shortcut-Breaking Subset (is_shortcut_breaking=true)")
+        print(f"  n={sb_metrics['n']}  accuracy={sb_metrics['accuracy']:.4f}  macro_f1={sb_metrics['macro_f1']:.4f}")
     print(f"\nResults -> {output_dir}/ (run_id={run_id})")
     print("=" * 60)
 

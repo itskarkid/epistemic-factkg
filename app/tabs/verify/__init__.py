@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from functools import lru_cache
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import streamlit as st
@@ -10,6 +13,30 @@ if TYPE_CHECKING:
     from app.config import AppConfig
 
 _MAX_EV = 4
+_PROBES_PATH = Path("data/probes/epistemic_probes.jsonl")
+
+_CATEGORY_LABELS = {
+    "st_contrast":       "Source Trust Contrast",
+    "shortcut_breaking": "Shortcut-Breaking",
+    "multi_evidence":    "Multi-Evidence",
+    "conflicting":       "Conflicting Evidence",
+    "is_text_contrast":  "IS Text Contrast",
+    "sensor":            "Sensor Observation",
+    "source_gradient":   "Source Gradient",
+    "evidence_types":    "Evidence Types (EW)",
+}
+
+
+@lru_cache(maxsize=1)
+def _load_probes() -> list[dict]:
+    if not _PROBES_PATH.exists():
+        return []
+    probes = []
+    for line in _PROBES_PATH.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            probes.append(json.loads(line))
+    return probes
 _STANCE_EMOJI = {
     "supports":             "✅",
     "refutes":              "❌",
@@ -119,7 +146,7 @@ def _render_result_tabs(result: dict, predictor, model_key: str) -> None:
 def render(cfg: "AppConfig") -> None:
     from app.config import enum_label
     from app.core.loaders import get_predictor
-    from app.core.state import init_state, load_random_example, load_by_id
+    from app.core.state import init_state, load_by_id
 
     # Must run before any widget renders — transfers _pending_claim → claim_input
     init_state(cfg)
@@ -141,8 +168,59 @@ def render(cfg: "AppConfig") -> None:
     #     st.info("Select at least one model above.")
     #     return
 
+    # ── Epistemic probe selector ──────────────────────────────────────────────
+    probes = _load_probes()
+    if probes:
+        with st.expander("Epistemic Probes — load a hand-crafted test case", expanded=False):
+            by_cat: dict[str, list[dict]] = {}
+            for p in probes:
+                by_cat.setdefault(p["category"], []).append(p)
+
+            probe_options = ["— select a probe —"]
+            probe_map: dict[str, dict] = {}
+            for cat, cat_probes in by_cat.items():
+                cat_label = _CATEGORY_LABELS.get(cat, cat)
+                for p in cat_probes:
+                    label = f"[{cat_label}]  {p['id']} — {p['name']}"
+                    probe_options.append(label)
+                    probe_map[label] = p
+
+            selected_label = st.selectbox(
+                "Select probe",
+                probe_options,
+                key="probe_selector",
+                label_visibility="collapsed",
+            )
+
+            if selected_label != "— select a probe —":
+                probe = probe_map[selected_label]
+                st.info(f"**Expected:** {probe['expected_behavior']}")
+                st.caption(
+                    f"Expected verdict: `{probe['expected_verdict']}`  ·  "
+                    f"Category: `{probe['category']}`"
+                )
+                if st.button("Load Probe", key="probe_load_btn", type="secondary"):
+                    from app.core.state import load_record_into_state
+                    probe_rec = {
+                        "claim":   probe["claim"],
+                        "verdict": {"label": probe["expected_verdict"]},
+                        "evidence": probe["evidence"],
+                        "id":      probe["id"],
+                    }
+                    load_record_into_state(probe_rec, cfg)
+                    st.session_state["_probe_loaded"]      = probe["id"]
+                    st.session_state["_random_true_label"] = probe["expected_verdict"]
+                    st.rerun()
+
     # ── Claim-load controls ───────────────────────────────────────────────────
-    # Random | Claim-ID text | Load — all in one compact row
+    sources = st.multiselect(
+        "Sample from",
+        ["test", "val", "probe"],
+        default=["test"],
+        key="verify_sources",
+        help="Random draws from the union of selected pools.",
+    )
+
     c_rand, c_id, c_load = st.columns([1, 4, 1])
 
     rand_clicked = c_rand.button("Random", key="verify_rand", width='stretch')
@@ -153,7 +231,8 @@ def render(cfg: "AppConfig") -> None:
     load_clicked = c_load.button("Load", key="verify_load", width='stretch')
 
     if rand_clicked:
-        load_random_example(cfg)
+        from app.core.state import load_random_from_sources
+        load_random_from_sources(sources or ["test"], cfg)
         st.rerun()
 
     if load_clicked:
@@ -165,8 +244,10 @@ def render(cfg: "AppConfig") -> None:
 
     # ── Claim ─────────────────────────────────────────────────────────────────
     loaded_id = st.session_state.get("current_claim_id")
+    rec_source = st.session_state.get("_loaded_source")
     if loaded_id:
-        st.caption(f"Claim ID: `{loaded_id}`")
+        src_label = f"  ·  Source: `{rec_source}`" if rec_source else ""
+        st.caption(f"ID: `{loaded_id}`{src_label}")
 
     claim = st.text_area(
         "Claim",
@@ -223,11 +304,15 @@ def render(cfg: "AppConfig") -> None:
                 format_func=enum_label,
                 key=f"src_{i}",
             )
-            ev_list[i] = {
+            updated = {
                 "text":        text,
                 "modality":    modality,
                 "source_type": source_type,
             }
+            if ev.get("source_id"):
+                updated["source_id"] = ev["source_id"]
+                st.caption(f"Source ID: `{ev['source_id']}`")
+            ev_list[i] = updated
 
     if to_remove is not None:
         ev_list.pop(to_remove)

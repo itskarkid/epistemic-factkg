@@ -10,31 +10,42 @@ from __future__ import annotations
 import streamlit as st
 
 
-_PATH_STYLE = {
-    "symbolic_override": ("info",    "Symbolic Override"),
-    "conflicting":       ("warning", "Conflicting Evidence"),
-    "weak_ec":           ("info",    "Weak EC — Neural Verdict"),
-    "baseline":          ("info",    "Baseline (No EC)"),
-}
-
-
 def render_decision_path(path_info: dict) -> None:
-    """Render an EC decision path callout from decision_path_info() output."""
-    path    = path_info.get("path", "baseline")
-    reason  = path_info.get("override_reason", "")
-    has_ec  = path_info.get("has_ec", False)
-    kind, label = _PATH_STYLE.get(path, ("info", path))
+    """Render a two-layer EC vs VerdictHead decision callout."""
+    has_ec      = path_info.get("has_ec", False)
+    ec_decision = path_info.get("ec_decision")
+    final_layer = path_info.get("final_layer", "verdicthead")
+    vh_pred     = path_info.get("vh_pred")
+    sup         = path_info.get("support_score", 0.0)
+    ref         = path_info.get("refute_score",  0.0)
+    thr         = path_info.get("ec_threshold",  0.35)
 
     if not has_ec:
-        st.info(f"**{label}** — {reason}")
+        st.info("**Baseline (No EC)** — No epistemic confidence formula.")
         return
 
-    sup = path_info.get("support_score", 0.0)
-    ref = path_info.get("refute_score",  0.0)
-    thr = path_info.get("ec_threshold",  0.35)
+    scores = f"`sup={sup:.3f}` · `ref={ref:.3f}` · `θ={thr:.2f}`"
 
-    msg = f"**{label}** — {reason}  \n`sup={sup:.3f}` · `ref={ref:.3f}` · `θ={thr:.2f}`"
-    getattr(st, kind)(msg)
+    if final_layer == "ec_symbolic":
+        st.success(
+            f"**🔬 EC Layer → {ec_decision}**  \n{scores}"
+        )
+        if vh_pred:
+            verdict = path_info.get("verdict", ec_decision)
+            if vh_pred == verdict:
+                st.caption(f"VerdictHead also predicted: `{vh_pred}` ✓")
+            else:
+                st.caption(f"VerdictHead predicted: `{vh_pred}` (overridden by EC symbolic decision)")
+    elif ec_decision == "conflicted":
+        st.warning(
+            f"**🧠 VerdictHead → conflict resolved**  \n"
+            f"EC conflicted — both sides crossed θ ({scores})."
+        )
+    else:
+        st.warning(
+            f"**🧠 VerdictHead → decided**  \n"
+            f"EC deferred — both sides below θ ({scores})."
+        )
 
 
 _STANCE_EMOJI = {

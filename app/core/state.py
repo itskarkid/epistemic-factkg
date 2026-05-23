@@ -57,6 +57,8 @@ def load_record_into_state(rec: dict, cfg: "AppConfig") -> None:
     st.session_state["evidence_list"]      = new_evs
     st.session_state["_random_true_label"] = rec.get("verdict", {}).get("label")
     st.session_state["current_claim_id"]   = rec.get("id")
+    st.session_state["_loaded_source"]     = rec.get("provenance", {}).get("dataset")
+    st.session_state["_probe_loaded"]      = rec.get("id") if rec.get("provenance", {}).get("dataset") == "probe" else None
     for i, ev in enumerate(new_evs):
         st.session_state[f"ev_{i}"]  = ev["text"]
         st.session_state[f"mod_{i}"] = ev["modality"]
@@ -70,6 +72,27 @@ def load_random_example(cfg: "AppConfig") -> None:
         st.warning("Test data not found.")
         return
     load_record_into_state(random.choice(records), cfg)
+
+
+def load_random_from_sources(sources: list[str], cfg: "AppConfig") -> None:
+    """Load a random record from the union of selected source pools.
+
+    sources: list containing any of "probe", "test", "val"
+    """
+    from app.core.loaders import load_test_records, load_val_records, load_probe_records
+
+    pool: list[dict] = []
+    if "test" in sources:
+        pool.extend(load_test_records(cfg.training_jsonl, cfg.splits_dir))
+    if "val" in sources:
+        pool.extend(load_val_records(cfg.training_jsonl, cfg.splits_dir))
+    if "probe" in sources:
+        pool.extend(load_probe_records())
+
+    if not pool:
+        st.warning("No records found for selected sources.")
+        return
+    load_record_into_state(random.choice(pool), cfg)
 
 
 def load_by_id(claim_id: str, cfg: "AppConfig") -> bool:

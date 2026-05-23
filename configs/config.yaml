@@ -44,6 +44,7 @@ app:
   tabs:
     - { key: verify,    icon: "🔍" }
     - { key: evaluate,  icon: "📊" }
+    - { key: probe_lab, icon: "🧪" }
     - { key: reports,   icon: "📈" }
     - { key: dataset,   icon: "🗄️" }
     - { key: pipeline,  icon: "⚙️" }

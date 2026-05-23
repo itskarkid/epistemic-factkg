@@ -131,25 +131,39 @@ class EpistemicHGNN(nn.Module):
         sup = float(ec[0])
         ref = float(ec[1])
 
+        vh_pred = _INT_TO_VERDICT.get(int(out["verdict_logits"].argmax(dim=-1).item()), "not_enough_evidence")
+
         if sup > _EC_DECISIVE and ref > _EC_DECISIVE:
-            # Both sides decisive — VerdictHead resolves the conflict.
-            verdict_idx = out["verdict_logits"].argmax(dim=-1).item()
-            verdict = _INT_TO_VERDICT.get(int(verdict_idx), "not_enough_evidence")
+            verdict = vh_pred
+            decision_path = "vh_conflict"
+            ec_decision   = "conflicted"
+            final_layer   = "verdicthead"
         elif sup > _EC_DECISIVE:
             verdict = "supported"
+            decision_path = "symbolic_supported"
+            ec_decision   = "supported"
+            final_layer   = "ec_symbolic"
         elif ref > _EC_DECISIVE:
             verdict = "refuted"
+            decision_path = "symbolic_refuted"
+            ec_decision   = "refuted"
+            final_layer   = "ec_symbolic"
         else:
-            # EC weak on both sides — VerdictHead decides.
-            verdict_idx = out["verdict_logits"].argmax(dim=-1).item()
-            verdict = _INT_TO_VERDICT.get(int(verdict_idx), "not_enough_evidence")
+            verdict = vh_pred
+            decision_path = "vh_fallback"
+            ec_decision   = "deferred"
+            final_layer   = "verdicthead"
 
         return {
             **out,
-            "stance_pred": stance_pred,
+            "stance_pred":   stance_pred,
             "support_score": sup,
-            "refute_score": ref,
-            "verdict": verdict,
+            "refute_score":  ref,
+            "verdict":       verdict,
+            "decision_path": decision_path,
+            "ec_decision":   ec_decision,
+            "final_layer":   final_layer,
+            "vh_pred":       vh_pred,
         }
 
     def build_prediction_payload(
@@ -204,6 +218,10 @@ class EpistemicHGNN(nn.Module):
             "refute_score":       float(out.get("refute_score",  0.0)),
             "has_ec":             True,
             "ec_threshold":       self.ec_threshold,
+            "decision_path":      out.get("decision_path", "vh_fallback"),
+            "ec_decision":        out.get("ec_decision",   "deferred"),
+            "final_layer":        out.get("final_layer",   "verdicthead"),
+            "vh_pred":            out.get("vh_pred"),
             "evidence_breakdown": breakdown,
             "hetero_data":        graph_data,
         }
