@@ -79,7 +79,7 @@ so no discrepancy is introduced.
 
 ---
 
-## Why _EC_DECISIVE = 0.35 is kept
+## Why the EC-decisive threshold mechanism is kept
 
 The EC-decisive branches are retained for two reasons:
 
@@ -88,13 +88,24 @@ The EC-decisive branches are retained for two reasons:
    VerdictHead's learned calibration. This preserves the epistemic semantics.
 
 2. **Training alignment:** The VerdictHead is supervised on the same EC formula
-   output. For claims where EC clearly signals refuted (ref > 0.35), the VerdictHead
-   also predicts refuted. Keeping the branch eliminates no real information — it just
-   makes the decision path explicit.
+   output. For claims where EC clearly signals one verdict, the VerdictHead agrees.
+   Keeping the branch eliminates no real information — it just makes the decision
+   path explicit.
 
 The `_EC_NEI_MAX` branch lacked this alignment: the VerdictHead was **not** trained
 to agree with "force NEI when both are low". It was trained to predict the true label
 for those claims.
+
+**Note — the threshold value is dynamic, not a fixed constant:**  
+`_EC_DECISIVE` is replaced in code by `self.ec_threshold`, which is Optuna-tuned
+(search range 0.20–0.60, step 0.05), saved into each model checkpoint, and loaded
+at eval/inference time from the checkpoint. The value varies per model:
+- v3-nli: 0.25 (Optuna-tuned)
+- v2-hgnn: 0.30 (Optuna-tuned)
+- Default fallback (pre-hparam-search): 0.35
+
+The *mechanism* (symbolic override when EC is decisive) is the permanent design
+decision. The specific threshold is a hyperparameter.
 
 ---
 

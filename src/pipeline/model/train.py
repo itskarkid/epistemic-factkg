@@ -133,6 +133,21 @@ def main() -> None:
     if not args.device:
         args.device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    if hparams:
+        _HPARAM_KEYS = ["hidden_dim", "heads", "dropout", "lr", "weight_decay",
+                        "is_loss_weight", "ec_threshold"]
+        parts = []
+        for k in _HPARAM_KEYS:
+            val = getattr(args, k, None)
+            if k in hparams and val == hparams[k]:
+                src = "hparam"
+            elif k in hparams:
+                src = f"cli-override (hparam was {hparams[k]})"
+            else:
+                src = "default"
+            parts.append(f"  {k}={val}  [{src}]")
+        print("Effective training config:\n" + "\n".join(parts))
+
     jsonl_path = Path(args.jsonl)
     if not jsonl_path.exists():
         print(

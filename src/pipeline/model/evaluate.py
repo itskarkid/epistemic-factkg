@@ -211,10 +211,18 @@ def main() -> None:
     state = ckpt_raw.get("model_state_dict", ckpt_raw) if isinstance(ckpt_raw, dict) else ckpt_raw
     ec_threshold = ckpt_raw.get("ec_threshold", 0.35) if isinstance(ckpt_raw, dict) else 0.35
 
-    hidden_dim = args.hidden_dim or (best.get("hidden_dim") if best else None) or 256
-    heads     = args.heads     or (best.get("heads")      if best else None) or 4
-    dropout   = args.dropout   or (best.get("dropout")    if best else None) or 0.3
-    print(f"Model arch: hidden_dim={hidden_dim}  heads={heads}  dropout={dropout}  ec_threshold={ec_threshold}")
+    def _resolve(cli_val, hparam_val, default):
+        if cli_val is not None:
+            return cli_val, "cli"
+        if hparam_val is not None:
+            return hparam_val, "hparam"
+        return default, "default"
+
+    hidden_dim, hd_src = _resolve(args.hidden_dim, best.get("hidden_dim") if best else None, 256)
+    heads,      h_src  = _resolve(args.heads,      best.get("heads")      if best else None, 4)
+    dropout,    d_src  = _resolve(args.dropout,     best.get("dropout")    if best else None, 0.3)
+    print(f"Model arch: hidden_dim={hidden_dim}[{hd_src}]  heads={heads}[{h_src}]  "
+          f"dropout={dropout}[{d_src}]  ec_threshold={ec_threshold}[checkpoint]")
 
     is_nli = MODELS.get(args.model) is NLIHybridHGNN
     graph_cfg = GraphConfig.v2() if is_nli else GraphConfig.v1()

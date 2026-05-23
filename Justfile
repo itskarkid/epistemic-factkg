@@ -182,7 +182,6 @@ train model=MODEL_NAME:
         --checkpoint-dir out/model/{{model}}/checkpoints \
         --report-dir out/reports/model/{{model}} \
         --epochs 100 \
-        --lr 3e-4 \
         --batch-size 32 \
         $([ -n "{{DEVICE}}" ] && echo "--device {{DEVICE}}") \
         $([ -n "{{RUN_ID}}" ] && echo "--run-id {{RUN_ID}}") \

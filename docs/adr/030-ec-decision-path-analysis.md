@@ -17,13 +17,15 @@
 | `vh_conflict`        | both `> θ`            | VerdictHead resolves conflict |
 | `vh_fallback`        | neither `> θ`         | VerdictHead decides |
 
-θ = 0.35 (Optuna-tuned on validation set, see ADR-015).
+θ is **dynamic** — Optuna-tuned (range 0.20–0.60), saved in each checkpoint, loaded at
+eval/inference time from the checkpoint. Per-model values: v3-nli = 0.25, v2-hgnn = 0.30,
+default fallback (pre-hparam-search) = 0.35. See `src/pipeline/model/hparam_search.py`.
 
 Before this ADR, only final verdict accuracy was tracked. This analysis adds per-branch counting, correctness, and per-source breakdown to `evaluate.py`, emitting results in `verdict_metrics.json` under `decision_paths` and in `eval_summary.md`.
 
 ---
 
-## Findings — v3-nli on Test Set (767 claims, θ=0.35)
+## Findings — v3-nli on Test Set (767 claims, θ=0.35 — checkpoint value at time of analysis, pre-hparam-update)
 
 ### Vote Distribution
 
@@ -36,7 +38,12 @@ Before this ADR, only final verdict accuracy was tracked. This analysis adds per
 
 **EC symbolic layer fires on 64.4% of claims** — it is the majority decision-maker, not a rare override.
 
-θ=0.35 was expected to require two moderate AVeriTeC evidence items to fire (single item ≈ 0.276 support_score < 0.35; two items ≈ 0.476 > 0.35). AI2THOR items have EC=1.0 and always fire. Synthetic items are constructed to produce decisive EC values. The high symbolic rate reflects the training distribution (AI2THOR + synthetic = ~44% of training data), not threshold miscalibration.
+At θ=0.35 (the checkpoint value for this analysis run), a single moderate AVeriTeC evidence
+item gives support_score ≈ 0.276 < θ (does not fire alone); two such items give ≈ 0.476 > θ
+(fires). AI2THOR items have EC=1.0 and always fire regardless of θ. Synthetic items are
+constructed to produce decisive EC values. The high symbolic rate reflects the training
+distribution (AI2THOR + synthetic = ~44% of training data), not threshold miscalibration.
+With the Optuna-tuned θ=0.25, the symbolic firing rate will be higher (lower bar to cross).
 
 ### Symbolic Accuracy Gap: Refuted > Supported
 
