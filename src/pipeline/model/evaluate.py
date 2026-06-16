@@ -457,6 +457,13 @@ def main() -> None:
     (output_dir / "verdict_metrics.json").write_text(
         json.dumps(verdict_metrics, indent=2), encoding="utf-8"
     )
+    per_record = [
+        {"claim_id": cid, "predicted": _INT_TO_VERDICT[p], "true_label": _INT_TO_VERDICT[t]}
+        for cid, p, t in zip(claim_ids, verdict_preds, verdict_trues)
+    ]
+    (output_dir / "per_record_predictions.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in per_record), encoding="utf-8"
+    )
 
     # ── Write eval_summary.md ─────────────────────────────────────────────────
     _now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

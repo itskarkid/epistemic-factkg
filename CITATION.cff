@@ -1,26 +1,36 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
-title: "Epistemic FactKG: A Knowledge Graph Framework for Epistemic Fact Checking"
-version: 0.1.0
-date-released: 2026-03-10
+title: "Epistemic FactKG: Pramana-grounded Source-Trust Benchmark for Fact Verification"
+version: 0.3.0
+date-released: 2026-06-12
 url: "https://github.com/karkid/epistemic-factkg"
 repository-code: "https://github.com/karkid/epistemic-factkg"
 license: MIT
 authors:
-  - family-names: "Contributors"
-    given-names: "Epistemic FactKG"
+  - family-names: "Karki"
+    given-names: "Dheeraj"
+    email: "dheerajkarki1790@gmail.com"
+    orcid: "https://orcid.org/0009-0008-7095-894X"
 keywords:
-  - knowledge-graph
-  - fact-checking
+  - fact-verification
+  - source-trust
   - epistemic-reasoning
-  - rdf
+  - benchmark
+  - knowledge-graph
+  - graph-neural-network
+  - shortcut-learning
+  - pramana
   - ai2thor
   - averitec
-  - claim-validation
-  - semantic-web
 abstract: >
-  A knowledge graph generation and claim validation framework for 
-  epistemic fact checking. This project processes structured data 
-  from AI2-THOR simulations and AVERITEC datasets to build RDF 
-  knowledge graphs and generate verifiable claims with epistemic labels.
+  A source-trust-isolating benchmark and pipeline for epistemic fact verification,
+  grounded in the Indian Pramana epistemology. The framework assigns each evidence
+  item an Epistemic Confidence score (EC = 1 - (1 - ST)^(EW * IS)) derived from
+  source trust, evidence-type weight, and inference strength, and trains heterogeneous
+  graph neural networks to reason over this signal. The v3 benchmark isolates source
+  trust as the sole label-determining feature by holding evidence text byte-identical
+  across trust tiers, demonstrating a sharp inversion: trust-blind models collapse to
+  chance (macro-F1 0.381) while trust-aware models win (v2-HGNN 0.924 ± 0.005).
+  Mid-tier boundary probes reveal that continuous trust reasoning is required, not
+  mere thresholding.

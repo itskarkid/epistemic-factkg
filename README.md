@@ -6,6 +6,14 @@
 
 A fact verification dataset and pipeline grounded in Indian Pramana epistemology. Combines AI2-THOR simulation-state claims and AVeriTeC web-evidence claims into a unified schema for training epistemic graph neural networks. Unlike existing systems that treat all evidence as equivalent, this framework assigns each claim an explicit epistemic category — encoding *how knowledge is obtained*, not just whether the claim is true.
 
+Each evidence item carries an **Epistemic Confidence** score derived from source trust, evidence-type weight, and inference strength:
+
+```
+EC = 1 − (1 − ST)^(EW × IS)
+```
+
+A verdict is *supported* or *refuted* when EC ≥ 0.75; otherwise *not_enough_evidence*.
+
 ## Pramana Framework
 
 Confidence weights derived from the classical Indian knowledge-source taxonomy:
@@ -39,21 +47,21 @@ just report        # markdown report + charts from validation output
 just run model     # graph → train → eval → compare  (all registered models)
 
 # Run specific models only:
-just run model "" v1-hgnn,baseline
+just run model "" baseline,v2-hgnn,v3-nli
 
 # Step by step for a specific model:
 just graph                  # build shared PyG graph dataset (once)
-just train                  # train default model (v1-hgnn)
+just train                  # train default model (v2-hgnn)
 just train baseline         # train a different model
 just eval                   # eval default model
 just eval baseline          # eval a different model
 
 # Multi-model:
-just run model list                     # list all registered models
-just run model train v1-hgnn,baseline   # train two models
-just run model eval  v1-hgnn,baseline   # eval two models
-just run model compare v1-hgnn,baseline # compare report
-just compare v1-hgnn baseline           # shorthand comparison
+just run model list                              # list all registered models
+just run model train baseline,v2-hgnn,v3-nli    # train three models
+just run model eval  baseline,v2-hgnn,v3-nli    # eval three models
+just run model compare v2-hgnn,baseline          # compare report
+just compare v2-hgnn baseline                    # shorthand comparison
 ```
 
 ## Installation
@@ -92,20 +100,25 @@ Outputs: `out/model/knowledge_graph.ttl` (RDF graph) and `data/raw/ai2thor/claim
 
 ## Model Architecture
 
-**EpistemicHGNN** is a neuro-symbolic heterogeneous graph neural network with three prediction heads:
+All models share the same **EpistemicEncoder** backbone (HeteroConv, `GraphConfig.v1()`):
 
 ```
-EpistemicEncoder  (HeteroConv, config-driven — GraphConfig.v1())
+EpistemicEncoder
     ↓ evidence embeddings [N_ev, hidden_dim]
 H1 StanceHead   → stance logits     [N_ev, 3]      supports / refutes / neutral
 H2 ISHead       → IS scalars        [N_ev, 1]      information strength ∈ [0,1]
-    ↓ soft symbolic EC aggregation (differentiable during training)
-VerdictHead     → verdict logits    [N_claims, 3]
+    ↓ symbolic EC aggregation  (EC = 1 − (1 − ST)^(EW × IS))
+    ↓
+    ┌──────────────┬───────────────────────────────┬──────────────────────────────┐
+    │   baseline   │          v2-hgnn              │           v3-nli             │
+    │  (no EC)     │  EC ≥ 0.75 → symbolic verdict │  v2-hgnn + DeBERTa NLI ×3   │
+    │              │  EC < 0.75 → HybridVerdictHead│  features as encoder input   │
+    └──────────────┴───────────────────────────────┴──────────────────────────────┘
 ```
 
 **Multi-task loss:** `L = stance_CE + λ₁ · IS_MSE + λ₂ · verdict_CE`
 
-At inference: hard argmax stance → symbolic EC scores → VerdictHead → verdict string.
+At inference: hard argmax stance → symbolic EC scores → verdict path (symbolic or learned head).
 
 ## Adding a New Model
 
@@ -162,7 +175,7 @@ epistemic-factkg/
 │   ├── raw/                   Source datasets (AVeriTeC, AI2-THOR, synthetic)
 │   └── registry/              source_trust_registry.jsonl, seed_pool.jsonl
 ├── docs/
-│   ├── adr/                   Architecture Decision Records (001–014)
+│   ├── adr/                   Architecture Decision Records (001–030)
 │   └── research-overview.md
 ├── src/
 │   ├── core/                  Pramana weights, schema, domain logic
@@ -190,7 +203,7 @@ just build                      # Build dataset (merge, filter, split)
 just validate                   # Validate schema + training distribution
 just report                     # Dataset quality report (markdown + charts)
 just graph                      # Build shared PyG graph dataset
-just train [model]              # Train a model (default: v1-hgnn)
+just train [model]              # Train a model (default: v2-hgnn)
 just eval  [model]              # Evaluate on test split
 just compare model1 model2      # Side-by-side comparison markdown
 just run data                   # Full data pipeline
@@ -202,13 +215,20 @@ just lint                       # Ruff format + lint check
 just fix                        # Auto-fix lint issues
 just test                       # pytest
 just clean                      # Delete all generated outputs (out/)
+python scripts/generate_report.py  # Generate results summary report
 ```
 
 ## Documentation
 
 | Document | Description |
 |---|---|
-| [Research Overview](docs/research-overview.md) | Problem motivation, Pramana inspiration, related work |
+| [Epistemic Framework](docs/epistemic-framework.md) | EC formula, source trust registry, IS cap — consolidated reference |
+| [Data Flow](docs/data-flow.md) | How data moves from raw sources to final split JSONL files |
+| [Evidence Labeling](docs/evidence-labeling.md) | Per-evidence fields, labeling rules, and stance design |
+| [Labeling Guide v3](docs/labeling_guide.md) | Authoritative field-by-field assignment guide for dataset construction |
+| [Model Evolution](docs/model-evolution.md) | Baseline → v2-HGNN → v3-NLI architecture history and decisions |
+| [Synthetic Data](docs/synthetic-data.md) | Shortcut-breaking strategy, templates, IS jitter, NEI distribution |
+| [Experiment 01 — Shortcut Discovery](docs/experiments/01_shortcut_discovery.md) | First shortcut discovery experiment (2026-05-12) |
 | [ADR-001](docs/adr/001-epistemic-framework.md) | Pramana epistemic framework |
 | [ADR-002](docs/adr/002-ports-and-adapters-architecture.md) | Ports & Adapters (hexagonal) architecture |
 | [ADR-003](docs/adr/003-floorplan-based-train-test-split.md) | Floorplan-based train/dev/test split |
@@ -258,7 +278,7 @@ If you use this work in research, please cite:
   title  = {Epistemic FactKG: Pramana-grounded Fact Verification},
   author = {Karki, Dheeraj},
   year   = {2026},
-  url    = {https://github.com/yourusername/epistemic-factkg}
+  url    = {https://github.com/karkid/epistemic-factkg}
 }
 ```
 

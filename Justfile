@@ -36,6 +36,7 @@ MODEL_REPORT_DIR    := "out/reports/model/" + MODEL_NAME
 RESULTS_DIR         := "out/reports/model/" + MODEL_NAME + "/eval"
 DEVICE              := env_var_or_default("DEVICE", "")
 RUN_ID              := env_var_or_default("RUN_ID", "")
+SEED                := env_var_or_default("SEED", "42")
 
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗
@@ -81,6 +82,12 @@ clean:
 [doc("Run a pipeline or step: just run <data|model> [STEP] [MODELS='all']")]
 run PIPELINE="" STEP="" MODELS="all":
     uv run python scripts/run_pipeline.py {{PIPELINE}} {{STEP}} {{MODELS}}
+
+
+[group("Dev")]
+[doc("Generate instructor PDF report → out/reports/project_report/ (reads live eval metrics, registry, diagrams)")]
+instructor-report:
+    uv run python scripts/generate_report.py
 
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗
@@ -185,6 +192,7 @@ train model=MODEL_NAME:
         --batch-size 32 \
         $([ -n "{{DEVICE}}" ] && echo "--device {{DEVICE}}") \
         $([ -n "{{RUN_ID}}" ] && echo "--run-id {{RUN_ID}}") \
+        --seed {{SEED}} \
         --verbose
 
 

@@ -6,10 +6,12 @@ from __future__ import annotations
 import argparse
 import json
 import pickle
+import random
 import sys
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import torch
 from torch_geometric.loader import DataLoader
 
@@ -67,6 +69,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--device", default=None, help="cuda or cpu (default: auto-detect)")
     ap.add_argument("--verbose", "-v", action="store_true")
     ap.add_argument("--run-id", default=None, help="Run ID for versioned output (default: ISO timestamp)")
+    ap.add_argument("--seed", type=int, default=42, help="Global random seed for reproducibility (default: 42)")
     return ap
 
 
@@ -129,6 +132,13 @@ def main() -> None:
         print(f"Loaded hparams for '{_pre.model}' from configs/hparams/{_pre.model}_best_hparams.json")
 
     args = parser.parse_args()
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
+    print(f"Random seed set to {args.seed}")
+
     # device: None means auto-detect (TrainConfig handles it, but train.py also needs it)
     if not args.device:
         args.device = "cuda" if torch.cuda.is_available() else "cpu"
